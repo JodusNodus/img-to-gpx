@@ -23,10 +23,6 @@ export function MapProjection({
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const imageOverlayRef = useRef<L.ImageOverlay | null>(null);
-  const markerRefs = useRef<L.Marker[]>([]);
-
-  // Marker colors
-  const colors = ["bg-red-500", "bg-blue-500", "bg-green-500"];
 
   // Initialize map
   useEffect(() => {
@@ -47,35 +43,6 @@ export function MapProjection({
     };
   }, []);
 
-  // Add colored markers for reference points
-  useEffect(() => {
-    if (!mapInstanceRef.current || !referencePoints) return;
-    // Remove old markers
-    markerRefs.current.forEach((marker) => marker.remove());
-    markerRefs.current = [];
-    // Add new markers
-    referencePoints.forEach((point, idx) => {
-      if (!point.mapPoint) return;
-      const [lat, lng] = point.mapPoint;
-      const colorClass = colors[idx] || "bg-gray-500";
-      const marker = L.marker([lat, lng], {
-        icon: L.divIcon({
-          className: "custom-marker",
-          html: `<div class='w-3 h-3 rounded-full border border-white ${colorClass}'></div>`,
-          iconSize: [12, 12],
-          iconAnchor: [6, 6],
-        }),
-      });
-      marker.addTo(mapInstanceRef.current!);
-      markerRefs.current.push(marker);
-    });
-    // Cleanup
-    return () => {
-      markerRefs.current.forEach((marker) => marker.remove());
-      markerRefs.current = [];
-    };
-  }, [referencePoints]);
-
   // Update image overlay when points or opacity/contrast change
   useEffect(() => {
     if (!mapInstanceRef.current || !points || !referencePoints) return;
@@ -92,32 +59,42 @@ export function MapProjection({
     img.onload = () => {
       // Get all reference points that have both image and map coordinates
       const validPoints = referencePoints.filter((p) => p.mapPoint);
-      if (validPoints.length === 0) return;
+      if (validPoints.length !== 2) return;
 
-      // Calculate the scale factor based on the first two points
+      // Calculate the scale factor based on the two points
       const p1 = validPoints[0];
       const p2 = validPoints[1];
 
-      // Calculate image distance
-      const dx = p1.imagePoint[0] - p2.imagePoint[0];
-      const dy = p1.imagePoint[1] - p2.imagePoint[1];
-      const imageDist = Math.sqrt(dx * dx + dy * dy);
+      // Calculate image distance in pixels
+      const imageDx = p2.imagePoint[0] - p1.imagePoint[0];
+      const imageDy = p2.imagePoint[1] - p1.imagePoint[1];
+      const imageDist = Math.sqrt(imageDx * imageDx + imageDy * imageDy);
 
-      // Calculate map distance
+      // Calculate map distance in meters
       const mapDist = mapInstanceRef.current!.distance(
         [p1.mapPoint![0], p1.mapPoint![1]],
         [p2.mapPoint![0], p2.mapPoint![1]]
       );
 
-      // Calculate scale factor
+      // Calculate scale factor (meters per pixel)
       const scaleFactor = mapDist / imageDist;
 
-      // Calculate the bounds using the first point as reference
-      const refPoint = validPoints[0];
-      const refLat = refPoint.mapPoint![0];
-      const refLng = refPoint.mapPoint![1];
-      const refX = refPoint.imagePoint[0];
-      const refY = refPoint.imagePoint[1];
+      // Find the top-left point (smallest x and y coordinates)
+      const topLeftPoint = validPoints.reduce((min, point) => {
+        if (
+          point.imagePoint[0] < min.imagePoint[0] ||
+          (point.imagePoint[0] === min.imagePoint[0] &&
+            point.imagePoint[1] < min.imagePoint[1])
+        ) {
+          return point;
+        }
+        return min;
+      });
+
+      const refLat = topLeftPoint.mapPoint![0];
+      const refLng = topLeftPoint.mapPoint![1];
+      const refX = topLeftPoint.imagePoint[0];
+      const refY = topLeftPoint.imagePoint[1];
 
       // Convert image coordinates to map coordinates
       const latScale = 111320; // meters per degree at equator

@@ -35,12 +35,12 @@ export function ReferencePoints({
   const [pendingMapClick, setPendingMapClick] = useState<
     [number, number] | null
   >(null);
+  const [imageLoaded, setImageLoaded] = useState(false);
 
   // Define colors for points
   const colors = [
     { name: "Red", class: "bg-red-500" },
     { name: "Blue", class: "bg-blue-500" },
-    { name: "Green", class: "bg-green-500" },
   ];
 
   // Initialize map only once
@@ -88,9 +88,9 @@ export function ReferencePoints({
         const marker = L.marker([lat, lng], {
           icon: L.divIcon({
             className: "custom-marker",
-            html: `<div class="w-6 h-6 rounded-full border-2 border-white ${colorClass}"></div>`,
-            iconSize: [24, 24],
-            iconAnchor: [12, 12],
+            html: `<div class='w-3 h-3 rounded-full border border-white ${colorClass}'></div>`,
+            iconSize: [12, 12],
+            iconAnchor: [6, 6],
           }),
         });
 
@@ -122,9 +122,9 @@ export function ReferencePoints({
       L.marker([lat, lng], {
         icon: L.divIcon({
           className: "custom-marker",
-          html: `<div class="w-6 h-6 rounded-full border-2 border-white bg-yellow-500"></div>`,
-          iconSize: [24, 24],
-          iconAnchor: [12, 12],
+          html: `<div class='w-3 h-3 rounded-full border border-white bg-yellow-500'></div>`,
+          iconSize: [12, 12],
+          iconAnchor: [6, 6],
         }),
       }).addTo(mapInstanceRef.current!);
     }
@@ -153,7 +153,7 @@ export function ReferencePoints({
 
   // Move to map phase when all points are selected
   useEffect(() => {
-    if (phase === "image" && referencePoints.length === 3) {
+    if (phase === "image" && referencePoints.length === 2) {
       setPhase("map");
     }
   }, [referencePoints.length, phase]);
@@ -171,6 +171,20 @@ export function ReferencePoints({
     }
   };
 
+  // Handle image load
+  const handleImageLoad = () => {
+    if (imageRef.current) {
+      console.log("Image loaded:", {
+        natural: [
+          imageRef.current.naturalWidth,
+          imageRef.current.naturalHeight,
+        ],
+        display: [imageRef.current.width, imageRef.current.height],
+      });
+      setImageLoaded(true);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <h2 className="text-2xl font-semibold text-gray-200">
@@ -178,10 +192,10 @@ export function ReferencePoints({
       </h2>
       <div className="text-sm text-gray-400 mb-4">
         {phase === "image"
-          ? referencePoints.length < 3
+          ? referencePoints.length < 2
             ? `Click on the image to select point ${
                 referencePoints.length + 1
-              } of 3`
+              } of 2`
             : "All points selected! Now set their locations on the map."
           : pendingMapClick
           ? "Select which point to place at this location"
@@ -196,6 +210,7 @@ export function ReferencePoints({
               ref={imageRef}
               src={imageUrl}
               alt="Reference"
+              onLoad={handleImageLoad}
               onClick={phase === "image" ? onImageClick : undefined}
               className={`max-w-full rounded-lg shadow-xl border border-gray-700/50 ${
                 phase === "image"
@@ -203,26 +218,36 @@ export function ReferencePoints({
                   : ""
               } transition-all duration-200`}
             />
-            {referencePoints.map((point, index) => {
-              if (!imageRef.current) return null;
-              const rect = imageRef.current.getBoundingClientRect();
-              const scaleX = rect.width / imageRef.current.naturalWidth;
-              const scaleY = rect.height / imageRef.current.naturalHeight;
-              const displayX = point.imagePoint[0] * scaleX;
-              const displayY = point.imagePoint[1] * scaleY;
-              const colorClass = colors[index].class;
+            {imageLoaded &&
+              referencePoints.map((point, index) => {
+                if (!imageRef.current) return null;
+                // Calculate position as percentage of image dimensions
+                const percentX =
+                  (point.imagePoint[0] / imageRef.current.naturalWidth) * 100;
+                const percentY =
+                  (point.imagePoint[1] / imageRef.current.naturalHeight) * 100;
+                const colorClass = colors[index].class;
 
-              return (
-                <div
-                  key={index}
-                  className={`absolute w-4 h-4 rounded-full transform -translate-x-1/2 -translate-y-1/2 ${colorClass}`}
-                  style={{
-                    left: `${displayX}px`,
-                    top: `${displayY}px`,
-                  }}
-                />
-              );
-            })}
+                console.log("Point position:", {
+                  point: point.imagePoint,
+                  natural: [
+                    imageRef.current.naturalWidth,
+                    imageRef.current.naturalHeight,
+                  ],
+                  percent: [percentX, percentY],
+                });
+
+                return (
+                  <div
+                    key={index}
+                    className={`absolute w-3 h-3 rounded-full border border-white transform -translate-x-1/2 -translate-y-1/2 ${colorClass}`}
+                    style={{
+                      left: `${percentX}%`,
+                      top: `${percentY}%`,
+                    }}
+                  />
+                );
+              })}
           </div>
         </div>
 
@@ -257,7 +282,7 @@ export function ReferencePoints({
           <h3 className="text-lg font-medium text-gray-200">
             Select Point Color
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {colors.map((color, index) => (
               <button
                 key={color.name}
@@ -287,7 +312,7 @@ export function ReferencePoints({
           <h3 className="text-lg font-medium text-gray-200">
             Reference Points
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {referencePoints.map((point, index) => (
               <div key={index} className="bg-gray-800/50 p-4 rounded-lg">
                 <div className="flex items-center gap-2 mb-2">

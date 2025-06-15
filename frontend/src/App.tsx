@@ -14,7 +14,18 @@ function App() {
   const [currentStep, setCurrentStep] = useState(1);
   const [overlayOpacity, setOverlayOpacity] = useState(0.5);
   const [overlayContrast, setOverlayContrast] = useState(1.7);
-  const [referencePoints, setReferencePoints] = useState<ReferencePoint[]>([]);
+  const [referencePoints, setReferencePoints] = useState<ReferencePoint[]>([
+    {
+      imagePoint: [698, 647],
+      mapPoint: [51.36472561905364, 3.798454391221591],
+      name: "Point 1",
+    },
+    {
+      imagePoint: [1323, 393],
+      mapPoint: [51.53398433262343, 4.45755807705727],
+      name: "Point 2",
+    },
+  ]);
   const [searchError, setSearchError] = useState<string | null>(null);
 
   // Handle image selection
@@ -129,7 +140,8 @@ function App() {
     const actualX = Math.round(x * scaleX);
     const actualY = Math.round(y * scaleY);
 
-    if (referencePoints.length < 3) {
+    console.log(actualX, actualY);
+    if (referencePoints.length < 2) {
       setReferencePoints([
         ...referencePoints,
         {
@@ -144,7 +156,7 @@ function App() {
   // Handle transition to map view
   const handleProjectImage = () => {
     if (
-      referencePoints.length === 3 &&
+      referencePoints.length === 2 &&
       referencePoints.every((p) => p.mapPoint !== null)
     ) {
       // Create points object for the Map component
@@ -229,11 +241,11 @@ function App() {
                 <button
                   onClick={handleProjectImage}
                   disabled={
-                    referencePoints.length !== 3 ||
+                    referencePoints.length !== 2 ||
                     referencePoints.some((p) => p.mapPoint === null)
                   }
                   className={`px-6 py-2 bg-indigo-600/80 text-white rounded-lg font-medium text-base transition-all duration-200 hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:ring-offset-2 focus:ring-offset-gray-900 ${
-                    referencePoints.length !== 3 ||
+                    referencePoints.length !== 2 ||
                     referencePoints.some((p) => p.mapPoint === null)
                       ? "opacity-50 cursor-not-allowed"
                       : ""
