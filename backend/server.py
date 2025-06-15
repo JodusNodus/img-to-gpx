@@ -93,14 +93,19 @@ def generate_points() -> Tuple[Response, int]:
             width = max_x - min_x + 2 * padding
             height = max_y - min_y + 2 * padding
             
-            # Normalize points to start from padding and convert to native Python types
-            normalized_points = [[float(x - min_x + padding), float(y - min_y + padding)] 
-                               for x, y in points]
-            
+            # Return both original and normalized points
             return create_response({
-                'points': normalized_points,
+                'points': points,  # Original points
+                'normalized_points': [[float(x - min_x + padding), float(y - min_y + padding)] 
+                                    for x, y in points],
                 'width': int(width),
-                'height': int(height)
+                'height': int(height),
+                'bounds': {
+                    'min_x': int(min_x),
+                    'min_y': int(min_y),
+                    'max_x': int(max_x),
+                    'max_y': int(max_y)
+                }
             })
         else:
             return create_response({'error': 'No points found'}, 400)

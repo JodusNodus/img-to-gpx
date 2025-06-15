@@ -1,39 +1,33 @@
 import { useState, useRef, useEffect } from "react";
-import type { FormEvent, ChangeEvent, MouseEvent } from "react";
+import type { ChangeEvent, MouseEvent } from "react";
 
 interface FormData {
   image: File | null;
-  startX: number;
-  startY: number;
 }
 
 interface Points {
   points: [number, number][];
+  normalized_points: [number, number][];
   width: number;
   height: number;
-}
-
-interface Color {
-  r: number;
-  g: number;
-  b: number;
-  hex: string;
+  bounds: {
+    min_x: number;
+    min_y: number;
+    max_x: number;
+    max_y: number;
+  };
 }
 
 function App() {
   const [formData, setFormData] = useState<FormData>({
     image: null,
-    startX: 0,
-    startY: 0,
   });
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [points, setPoints] = useState<Points | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedColor, setSelectedColor] = useState<Color | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
-  const colorCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const handleImageChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -54,44 +48,7 @@ function App() {
     }
   };
 
-  const getColorAtPoint = (
-    img: HTMLImageElement,
-    x: number,
-    y: number
-  ): Color => {
-    const canvas = colorCanvasRef.current;
-    if (!canvas) return { r: 0, g: 0, b: 0, hex: "#000000" };
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return { r: 0, g: 0, b: 0, hex: "#000000" };
-
-    // Set canvas size to match image
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-
-    // Draw image
-    ctx.drawImage(img, 0, 0);
-
-    // Get pixel data
-    const pixel = ctx.getImageData(x, y, 1, 1).data;
-    const r = pixel[0];
-    const g = pixel[1];
-    const b = pixel[2];
-
-    // Convert to hex
-    const hex =
-      "#" +
-      [r, g, b]
-        .map((x) => {
-          const hex = x.toString(16);
-          return hex.length === 1 ? "0" + hex : hex;
-        })
-        .join("");
-
-    return { r, g, b, hex };
-  };
-
-  const handleImageClick = (e: MouseEvent<HTMLImageElement>) => {
+  const handleImageClick = async (e: MouseEvent<HTMLImageElement>) => {
     const img = imageRef.current;
     if (!img) return;
 
@@ -107,86 +64,67 @@ function App() {
     const actualX = Math.round(x * scaleX);
     const actualY = Math.round(y * scaleY);
 
-    // Get color at clicked point
-    const color = getColorAtPoint(img, actualX, actualY);
-    setSelectedColor(color);
+    // Generate line for the new point
+    if (formData.image) {
+      setError(null);
+      setPoints(null);
+      setLoading(true);
 
-    setFormData((prev) => ({
-      ...prev,
-      startX: actualX,
-      startY: actualY,
-    }));
-  };
+      const data = new FormData();
+      data.append("image", formData.image);
+      data.append("start_x", String(actualX));
+      data.append("start_y", String(actualY));
 
-  const handleCoordinateChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: Number(value),
-    }));
-  };
+      try {
+        const res = await fetch("http://localhost:5131/api/points", {
+          method: "POST",
+          body: data,
+        });
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setPoints(null);
-
-    if (!formData.image) {
-      setError("Please upload a PNG image.");
-      return;
-    }
-
-    setLoading(true);
-    const data = new FormData();
-    data.append("image", formData.image);
-    data.append("start_x", String(formData.startX));
-    data.append("start_y", String(formData.startY));
-
-    try {
-      const res = await fetch("http://localhost:5131/api/points", {
-        method: "POST",
-        body: data,
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        setError(errorData.error || "Unknown error");
-      } else {
-        const pointsData = await res.json();
-        setPoints(pointsData);
+        if (!res.ok) {
+          const errorData = await res.json();
+          setError(errorData.error || "Unknown error");
+        } else {
+          const pointsData = await res.json();
+          setPoints(pointsData);
+        }
+      } catch {
+        setError("Network error");
+      } finally {
+        setLoading(false);
       }
-    } catch {
-      setError("Network error");
-    } finally {
-      setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (points && canvasRef.current) {
+    if (points && canvasRef.current && imageRef.current) {
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
+      const img = imageRef.current;
       if (!ctx) return;
 
-      // Set canvas size
-      canvas.width = points.width;
-      canvas.height = points.height;
+      // Set canvas size to match the displayed image size
+      const rect = img.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
 
-      // Clear canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Calculate scale factors
+      const scaleX = rect.width / img.naturalWidth;
+      const scaleY = rect.height / img.naturalHeight;
 
       // Draw points
       ctx.beginPath();
-      ctx.strokeStyle = "white";
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(255, 0, 0, 0.8)"; // Red with some transparency
+      ctx.lineWidth = 3; // Thicker line
 
       if (points.points.length > 0) {
         const [startX, startY] = points.points[0];
-        ctx.moveTo(startX, startY);
+        // Scale the points to match the displayed image size
+        ctx.moveTo(startX * scaleX, startY * scaleY);
 
         for (let i = 1; i < points.points.length; i++) {
           const [x, y] = points.points[i];
-          ctx.lineTo(x, y);
+          ctx.lineTo(x * scaleX, y * scaleY);
         }
       }
 
@@ -210,10 +148,7 @@ function App() {
           Image to Line Converter
         </h1>
 
-        <form
-          className="bg-gray-800/50 backdrop-blur-sm p-8 rounded-xl shadow-2xl border border-gray-700/50 mb-8 flex flex-col gap-6"
-          onSubmit={handleSubmit}
-        >
+        <form className="bg-gray-800/50 backdrop-blur-sm p-8 rounded-xl shadow-2xl border border-gray-700/50 mb-8 flex flex-col gap-6">
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-300 mb-2">
               Upload PNG Image
@@ -227,61 +162,25 @@ function App() {
           </div>
 
           {imagePreview && (
-            <div className="my-6 text-center relative">
-              <img
-                ref={imageRef}
-                src={imagePreview}
-                alt="Preview"
-                onClick={handleImageClick}
-                title="Click to select start coordinates"
-                className="max-w-full max-h-[1200px] rounded-lg shadow-xl border border-gray-700/50 cursor-crosshair hover:border-indigo-500/50 transition-all duration-200"
-              />
+            <div className="my-6 text-center">
+              <div className="inline-block relative">
+                <img
+                  ref={imageRef}
+                  src={imagePreview}
+                  alt="Preview"
+                  onClick={handleImageClick}
+                  title="Click to select start point"
+                  className="max-w-full max-h-[1200px] rounded-lg shadow-xl border border-gray-700/50 cursor-crosshair hover:border-indigo-500/50 transition-all duration-200"
+                />
+                {points && (
+                  <canvas
+                    ref={canvasRef}
+                    className="absolute inset-0 w-full h-full max-w-full max-h-[1200px] rounded-lg"
+                  />
+                )}
+              </div>
             </div>
           )}
-
-          <div className="flex flex-col sm:flex-row gap-6 items-center justify-center my-4">
-            <div className="flex gap-6 items-center">
-              <label className="flex items-center gap-3 text-gray-300">
-                <span className="text-sm font-medium">Start X:</span>
-                <input
-                  type="number"
-                  name="startX"
-                  value={formData.startX}
-                  onChange={handleCoordinateChange}
-                  min={0}
-                  required
-                  className="w-24 p-2 rounded-lg bg-gray-900/50 border border-gray-700/50 text-white focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/20 transition-all"
-                />
-              </label>
-              <label className="flex items-center gap-3 text-gray-300">
-                <span className="text-sm font-medium">Start Y:</span>
-                <input
-                  type="number"
-                  name="startY"
-                  value={formData.startY}
-                  onChange={handleCoordinateChange}
-                  min={0}
-                  required
-                  className="w-24 p-2 rounded-lg bg-gray-900/50 border border-gray-700/50 text-white focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/20 transition-all"
-                />
-              </label>
-            </div>
-
-            {selectedColor && (
-              <div className="flex items-center gap-4 p-3 bg-gray-900/50 rounded-lg border border-gray-700/50">
-                <div
-                  className="w-10 h-10 rounded-lg border border-gray-700/50 shadow-lg"
-                  style={{ backgroundColor: selectedColor.hex }}
-                />
-                <div className="flex flex-col gap-1 text-gray-300 text-sm">
-                  <span className="font-medium">
-                    RGB: {selectedColor.r}, {selectedColor.g}, {selectedColor.b}
-                  </span>
-                  <span className="font-medium">HEX: {selectedColor.hex}</span>
-                </div>
-              </div>
-            )}
-          </div>
 
           <button
             type="submit"
@@ -319,19 +218,6 @@ function App() {
             </p>
           )}
         </form>
-
-        {points && (
-          <div className="mt-8 text-center">
-            <div className="inline-block p-4 bg-gray-800/50 backdrop-blur-sm rounded-xl shadow-2xl border border-gray-700/50">
-              <canvas
-                ref={canvasRef}
-                className="max-w-full rounded-lg border border-gray-700/50 bg-gray-900/50"
-              />
-            </div>
-          </div>
-        )}
-
-        <canvas ref={colorCanvasRef} className="hidden" />
       </div>
     </div>
   );
