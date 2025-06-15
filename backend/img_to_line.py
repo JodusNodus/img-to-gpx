@@ -2,12 +2,15 @@ from typing import Tuple, List
 import cv2
 import numpy as np
 import svgwrite
-import argparse
 from pathlib import Path
 from skimage.morphology import skeletonize
+import logging
+import tempfile
 
 # Constants
 DEFAULT_SIMPLIFICATION_EPSILON = 0.003
+
+logger = logging.getLogger(__name__)
 
 def preprocess_image(image_path: Path) -> Tuple[np.ndarray, np.ndarray]:
     """Read image and convert to HSV."""
@@ -88,18 +91,12 @@ def detect_path(img: np.ndarray, hsv: np.ndarray,
     debug_img = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
     cv2.drawContours(debug_img, contours, -1, (0, 255, 0), 2)
     cv2.circle(debug_img, (start_x, start_y), 5, (0, 0, 255), -1)
-    cv2.imwrite('debug_mask_initial.png', debug_img)
+    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+        debug_path = Path(tmp.name)
+        cv2.imwrite(str(debug_path), debug_img)
+        logger.info(f"Debug image saved: {debug_path}")
     
     return list(contours)
-
-def simplify_contours(contours: List[np.ndarray]) -> List[np.ndarray]:
-    """Reduce number of points in contours."""
-    simplified_contours = []
-    for cnt in contours:
-        epsilon = DEFAULT_SIMPLIFICATION_EPSILON * cv2.arcLength(cnt, True)
-        approx = cv2.approxPolyDP(cnt, epsilon, True)
-        simplified_contours.append(approx)
-    return simplified_contours
 
 def create_svg(contours: List[np.ndarray], output_path: str, 
                width: int, height: int) -> None:
@@ -124,24 +121,4 @@ def create_svg(contours: List[np.ndarray], output_path: str,
                 fill='none'
             ))
     
-    dwg.save()
-
-def main() -> None:
-    """Main entry point."""
-    parser = argparse.ArgumentParser(description='Convert image to vector line drawing')
-    parser.add_argument('input', type=str, help='Input image path')
-    parser.add_argument('--start-x', type=int, required=True, help='X coordinate of a known point on the line')
-    parser.add_argument('--start-y', type=int, required=True, help='Y coordinate of a known point on the line')
-    args = parser.parse_args()
-    
-    try:
-        img, hsv = preprocess_image(Path(args.input))
-        contours = detect_path(img, hsv, args.start_x, args.start_y)
-        height, width = img.shape[:2]
-        create_svg(contours, 'output.svg', width, height)
-        
-    except Exception as e:
-        print(f"Error processing image: {str(e)}")
-
-if __name__ == "__main__":
-    main() 
+    dwg.save() 

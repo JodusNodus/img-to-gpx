@@ -1,0 +1,13 @@
+{
+  "name": "img-to-gpx",
+  "version": "1.0.0",
+  "description": "Image to GPX converter with Vite frontend and Python backend",
+  "scripts": {
+    "frontend": "cd frontend && npm run dev",
+    "backend": "cd backend && python server.py",
+    "dev": "concurrently \"npm run frontend\" \"npm run backend\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
