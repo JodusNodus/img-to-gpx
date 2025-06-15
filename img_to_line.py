@@ -4,6 +4,8 @@ import numpy as np
 import svgwrite
 import argparse
 from pathlib import Path
+from skimage.morphology import skeletonize
+from skimage.filters import threshold_otsu
 
 # Constants
 DEFAULT_MARGIN = 20
@@ -202,11 +204,24 @@ def detect_path(img: np.ndarray, hsv: np.ndarray,
     bgr_mask = cv2.inRange(img, bgr_lower, bgr_upper)
     mask = cv2.bitwise_or(hsv_mask, bgr_mask)
     
+    # Convert mask to binary
+    binary_mask = mask > 0
+    
+    # Skeletonize the mask
+    skeleton = skeletonize(binary_mask)
+    
+    # Find contours in the skeleton
+    contours, _ = cv2.findContours(skeleton.astype(np.uint8), 
+                                 cv2.RETR_EXTERNAL, 
+                                 cv2.CHAIN_APPROX_SIMPLE)
+    
     # Save debug image
     if debug:
-        cv2.imwrite('debug_mask_initial.png', mask)
+        debug_img = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+        cv2.drawContours(debug_img, contours, -1, (0, 255, 0), 2)
+        cv2.imwrite('debug_mask_initial.png', debug_img)
     
-    return []
+    return contours
 
 def simplify_contours(contours: List[np.ndarray]) -> List[np.ndarray]:
     """
