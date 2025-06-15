@@ -1,0 +1,4 @@
+{
+  "python.analysis.typeCheckingMode": "basic",
+  "python.pythonPath": "/Users/thomas/Projects/img-to-gpx/venv/bin/python"
+}
