@@ -45,12 +45,47 @@
   border-radius: 8px;
   background-color: #1a1a1a;
   transition: border-color 0.25s;
+  width: 100%;
+  max-width: 600px;
 }
 
-.read-the-docs {
-  color: #888;
+/* Form styles */
+form.card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
+form.card > div {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: center;
+}
+
+label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+input[type="file"] {
+  padding: 0.5rem;
+  border-radius: 4px;
+  background-color: #242424;
+  border: 1px solid #333;
+  width: 100%;
+}
+
+input[type="number"] {
+  padding: 0.5rem;
+  border-radius: 4px;
+  background-color: #242424;
+  border: 1px solid #333;
+  width: 80px;
+}
+
+/* Button styles */
 button {
   border-radius: 8px;
   border: 1px solid transparent;
@@ -58,16 +93,48 @@ button {
   font-size: 1em;
   font-weight: 500;
   font-family: inherit;
-  background-color: #1a1a1a;
+  background-color: #242424;
   cursor: pointer;
-  transition: border-color 0.25s;
+  transition: all 0.25s;
 }
 
 button:hover {
   border-color: #646cff;
+  background-color: #2a2a2a;
+}
+
+button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 button:focus,
 button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
+}
+
+/* SVG preview styles */
+.svg-preview {
+  border: 1px solid #333;
+  background: #fff;
+  padding: 1rem;
+  border-radius: 4px;
+  margin: 1rem 0;
+}
+
+.download-link {
+  display: inline-block;
+  margin-top: 1rem;
+  color: #646cff;
+  text-decoration: none;
+}
+
+.download-link:hover {
+  text-decoration: underline;
+}
+
+/* Error message */
+.error-message {
+  color: #ff6b6b;
+  margin: 0.5rem 0;
 }

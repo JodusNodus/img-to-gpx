@@ -101,17 +101,29 @@ def detect_path(img: np.ndarray, hsv: np.ndarray,
 def create_svg(contours: List[np.ndarray], output_path: str, 
                width: int, height: int) -> None:
     """Convert contours to SVG."""
-    dwg = svgwrite.Drawing(output_path, size=(width, height))
+    if not contours:
+        raise ValueError("No contours provided")
+    
+    # Get the bounding box of all points
+    all_points = np.vstack([contour.reshape(-1, 2) for contour in contours])
+    min_x = np.min(all_points[:, 0])
+    min_y = np.min(all_points[:, 1])
+    max_x = np.max(all_points[:, 0])
+    max_y = np.max(all_points[:, 1])
+    
+    # Add some padding
+    padding = 10
+    svg_width = str(max_x - min_x + 2 * padding)
+    svg_height = str(max_y - min_y + 2 * padding)
+    
+    # Create SVG with actual dimensions
+    dwg = svgwrite.Drawing(output_path, size=(svg_width, svg_height))
     
     for contour in contours:
         if len(contour) > 1:
-            # Get min coordinates to zero the output
-            points = contour.reshape(-1, 2)
-            min_x = np.min(points[:, 0])
-            min_y = np.min(points[:, 1])
-            
-            # Create path with zeroed coordinates
-            points = [f"{point[0][0]-min_x},{point[0][1]-min_y}" for point in contour]
+            # Create path with zeroed coordinates and padding
+            points = [f"{point[0][0]-min_x+padding},{point[0][1]-min_y+padding}" 
+                     for point in contour]
             path_data = f"M {' L '.join(points)}"
             
             dwg.add(dwg.path(
