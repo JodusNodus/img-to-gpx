@@ -4,9 +4,10 @@ import os
 import tempfile
 from pathlib import Path
 import sys
-from typing import Tuple, Union, Any
+from typing import Tuple, Union, Any, List
+import numpy as np
 sys.path.append(str(Path(__file__).parent))
-from img_to_line import preprocess_image, detect_path, create_svg
+from img_to_line import preprocess_image, detect_path
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -36,10 +37,7 @@ CORS(app, resources={
 
 def create_response(data: Any, status_code: int = 200) -> Tuple[Response, int]:
     """Create a standardized response with proper CORS headers."""
-    if isinstance(data, str):
-        response = Response(data, mimetype='image/svg+xml')
-    else:
-        response = jsonify(data)
+    response = jsonify(data)
     return response, status_code
 
 @app.route('/')
@@ -52,9 +50,9 @@ def serve_static(path: str) -> Response:
     """Serve static files from the frontend dist directory."""
     return send_from_directory(str(STATIC_FOLDER), path)
 
-@app.route('/api/svg', methods=['POST'])
-def generate_svg() -> Tuple[Response, int]:
-    """Generate SVG from uploaded image."""
+@app.route('/api/points', methods=['POST'])
+def generate_points() -> Tuple[Response, int]:
+    """Generate points from uploaded image."""
     if 'image' not in request.files:
         return create_response({'error': 'No image uploaded'}, 400)
     
@@ -70,31 +68,51 @@ def generate_svg() -> Tuple[Response, int]:
         image_file.save(tmp.name)
         tmp_path = Path(tmp.name)
 
-    output_path = None
     try:
         img, hsv = preprocess_image(tmp_path)
         contours = detect_path(img, hsv, start_x, start_y)
-        height, width = img.shape[:2]
-        output_path = tmp_path.with_suffix('.svg')
-        os.makedirs(output_path.parent, exist_ok=True)
-        create_svg(contours, str(output_path), width, height)
         
-        with open(output_path, 'r') as f:
-            svg_string = f.read()
+        # Convert contours to points
+        points = []
+        for contour in contours:
+            if len(contour) > 1:
+                # Reshape and convert to list of [x, y] points
+                contour_points = contour.reshape(-1, 2).tolist()
+                points.extend(contour_points)
         
-        logger.info(f"SVG generated successfully: {output_path}")
-        return create_response(svg_string)
+        # Get bounding box for canvas size
+        if points:
+            points_array = np.array(points)
+            min_x = np.min(points_array[:, 0])
+            min_y = np.min(points_array[:, 1])
+            max_x = np.max(points_array[:, 0])
+            max_y = np.max(points_array[:, 1])
+            
+            # Add padding
+            padding = 10
+            width = max_x - min_x + 2 * padding
+            height = max_y - min_y + 2 * padding
+            
+            # Normalize points to start from padding and convert to native Python types
+            normalized_points = [[float(x - min_x + padding), float(y - min_y + padding)] 
+                               for x, y in points]
+            
+            return create_response({
+                'points': normalized_points,
+                'width': int(width),
+                'height': int(height)
+            })
+        else:
+            return create_response({'error': 'No points found'}, 400)
         
     except Exception as e:
-        logger.error(f"Error generating SVG: {str(e)}", exc_info=True)
+        logger.error(f"Error generating points: {str(e)}", exc_info=True)
         return create_response({'error': str(e)}, 500)
         
     finally:
         # Cleanup temporary files
         try:
             os.remove(tmp_path)
-            if output_path and output_path.exists():
-                os.remove(output_path)
         except Exception as e:
             logger.warning(f"Error cleaning up temporary files: {str(e)}")
 

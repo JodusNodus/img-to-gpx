@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { FormEvent, ChangeEvent } from "react";
 import "./App.css";
 
@@ -8,15 +8,22 @@ interface FormData {
   startY: number;
 }
 
+interface Points {
+  points: [number, number][];
+  width: number;
+  height: number;
+}
+
 function App() {
   const [formData, setFormData] = useState<FormData>({
     image: null,
     startX: 509,
     startY: 358,
   });
-  const [svg, setSvg] = useState<string | null>(null);
+  const [points, setPoints] = useState<Points | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const handleImageChange = (e: ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({
@@ -36,7 +43,7 @@ function App() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    setSvg(null);
+    setPoints(null);
 
     if (!formData.image) {
       setError("Please upload a PNG image.");
@@ -50,7 +57,7 @@ function App() {
     data.append("start_y", String(formData.startY));
 
     try {
-      const res = await fetch("http://localhost:5131/api/svg", {
+      const res = await fetch("http://localhost:5131/api/points", {
         method: "POST",
         body: data,
       });
@@ -59,8 +66,8 @@ function App() {
         const errorData = await res.json();
         setError(errorData.error || "Unknown error");
       } else {
-        const svgText = await res.text();
-        setSvg(svgText);
+        const pointsData = await res.json();
+        setPoints(pointsData);
       }
     } catch {
       setError("Network error");
@@ -69,9 +76,41 @@ function App() {
     }
   };
 
+  useEffect(() => {
+    if (points && canvasRef.current) {
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      // Set canvas size
+      canvas.width = points.width;
+      canvas.height = points.height;
+
+      // Clear canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw points
+      ctx.beginPath();
+      ctx.strokeStyle = "black";
+      ctx.lineWidth = 2;
+
+      if (points.points.length > 0) {
+        const [startX, startY] = points.points[0];
+        ctx.moveTo(startX, startY);
+
+        for (let i = 1; i < points.points.length; i++) {
+          const [x, y] = points.points[i];
+          ctx.lineTo(x, y);
+        }
+      }
+
+      ctx.stroke();
+    }
+  }, [points]);
+
   return (
     <div className="container">
-      <h1>Image to GPX Converter</h1>
+      <h1>Image to Line Converter</h1>
 
       <form className="card" onSubmit={handleSubmit}>
         <div>
@@ -104,26 +143,18 @@ function App() {
         </div>
 
         <button type="submit" disabled={loading}>
-          {loading ? "Processing..." : "Generate SVG"}
+          {loading ? "Processing..." : "Generate Line"}
         </button>
 
         {error && <p className="error-message">{error}</p>}
       </form>
 
-      {svg && (
+      {points && (
         <div className="card">
-          <h2>Result SVG</h2>
-          <div
-            className="svg-preview"
-            dangerouslySetInnerHTML={{ __html: svg }}
-          />
-          <a
-            href={`data:image/svg+xml,${encodeURIComponent(svg)}`}
-            download="output.svg"
-            className="download-link"
-          >
-            Download SVG
-          </a>
+          <h2>Result</h2>
+          <div className="canvas-container">
+            <canvas ref={canvasRef} />
+          </div>
         </div>
       )}
     </div>
