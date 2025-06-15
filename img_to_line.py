@@ -4,6 +4,7 @@ from skimage import feature
 import svgwrite
 import argparse
 from pathlib import Path
+from skimage.morphology import skeletonize
 
 def preprocess_image(image_path):
     # Read the image
@@ -80,32 +81,88 @@ def contour_color_stddev(hsv, contour):
     std = np.std(pixels, axis=0)
     return np.mean(std)  # Mean stddev across HSV channels
 
-def detect_path(img, hsv):
+def detect_path(img, hsv, start_x, start_y):
     # Analyze colors first
     mean, std = analyze_colors(hsv)
     
-    # Use a wider blue-specific HSV range for the mask
-    lower_bound = np.array([90, 30, 30])
-    upper_bound = np.array([150, 255, 255])
-    print(f"Using wide blue HSV mask: lower={lower_bound}, upper={upper_bound}")
-    mask = cv2.inRange(hsv, lower_bound, upper_bound)
+    # Use CLI-provided starting point
+    start_point = (start_x, start_y)
+    # Print the BGR and HSV color at the sampled point
+    bgr_at_point = img[start_point[1], start_point[0]]  # [y, x]
+    hsv_at_point = hsv[start_point[1], start_point[0]]
+    print(f'BGR at {start_point}: {bgr_at_point}')
+    print(f'HSV at {start_point}: {hsv_at_point}')
+    
+    # Use very strict color matching
+    # HSV approach with very tight ranges
+    h, s, v = map(int, hsv_at_point)  # Convert to int first
+    # Ensure proper bounds for HSV
+    hsv_lower = np.array([
+        max(0, h-5),
+        max(0, s-20),
+        max(0, v-20)
+    ])
+    hsv_upper = np.array([
+        min(179, h+5),
+        min(255, s+20),
+        min(255, v+20)
+    ])
+    print(f'Using HSV mask: lower={hsv_lower}, upper={hsv_upper}')
+    hsv_mask = cv2.inRange(hsv, hsv_lower, hsv_upper)
+    print(f'HSV mask non-zero pixels: {np.count_nonzero(hsv_mask)}')
+    
+    # BGR approach with very tight ranges
+    b, g, r = map(int, bgr_at_point)  # Convert to int first
+    # Ensure proper bounds for BGR
+    bgr_lower = np.array([
+        max(0, b-10),
+        max(0, g-10),
+        max(0, r-10)
+    ])
+    bgr_upper = np.array([
+        min(255, b+10),
+        min(255, g+10),
+        min(255, r+10)
+    ])
+    print(f'Using BGR mask: lower={bgr_lower}, upper={bgr_upper}')
+    bgr_mask = cv2.inRange(img, bgr_lower, bgr_upper)
+    print(f'BGR mask non-zero pixels: {np.count_nonzero(bgr_mask)}')
+    
+    # Combine both masks using AND instead of OR for stricter matching
+    mask = cv2.bitwise_and(hsv_mask, bgr_mask)
+    print(f'Combined mask non-zero pixels: {np.count_nonzero(mask)}')
+    
+    # Create debug image showing filtered pixels
+    debug_filtered = img.copy()
+    # Create a colored overlay for the filtered pixels
+    overlay = np.zeros_like(img)
+    overlay[mask > 0] = [0, 255, 0]  # Green overlay for matching pixels
+    # Blend the overlay with the original image
+    alpha = 0.7  # Increased alpha for more visible overlay
+    debug_filtered = cv2.addWeighted(debug_filtered, 1, overlay, alpha, 0)
+    # Add the starting point
+    cv2.circle(debug_filtered, start_point, 8, tuple(int(x) for x in bgr_at_point), -1)
+    cv2.imwrite('debug_filtered.png', debug_filtered)
+    
+    # Save debug mask
+    cv2.imwrite('debug_mask.png', mask)
     
     # Remove border from mask
     mask = remove_border(mask, margin=20)
     
-    # Save debug image
-    cv2.imwrite('debug_mask.png', mask)
-    
-    # Apply morphological operations to clean up the mask
-    kernel = np.ones((3,3), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    
-    # Additional dilation to connect nearby components
-    mask = cv2.dilate(mask, kernel, iterations=2)
-    
-    # Save debug image after morphological operations
-    cv2.imwrite('debug_mask_cleaned.png', mask)
+    # Fill small gaps with larger kernel
+    kernel_close = np.ones((5, 5), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_close)
+
+    # Connect nearby spots with minimal thickening
+    kernel_dilate = np.ones((3, 3), np.uint8)
+    mask = cv2.dilate(mask, kernel_dilate, iterations=1)
+
+    # Remove small noise
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_dilate)
+
+    # Optional: Skeletonize to thin the line
+    mask = skeletonize(mask // 255).astype(np.uint8) * 255
     
     # Find contours in the mask
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -125,7 +182,7 @@ def detect_path(img, hsv):
     filtered = []
     for i, cnt in enumerate(contours):
         area = cv2.contourArea(cnt)
-        if area < 30:
+        if area < 5:  # Reduced minimum area threshold
             print(f"Contour {i}: Skipped (too small)")
             continue
         x, y, w, h = cv2.boundingRect(cnt)
@@ -139,12 +196,12 @@ def detect_path(img, hsv):
         cv2.drawContours(mask_contour, [cnt], -1, 255, -1)
         dist_transform = cv2.distanceTransform(mask_contour, cv2.DIST_L2, 5)
         thickness = np.max(dist_transform) * 2
-        if not (1 <= thickness <= 50):
+        if not (0.5 <= thickness <= 100):  # Increased max thickness
             print(f"Contour {i}: Skipped (thickness {thickness:.1f})")
             continue
         color_std = contour_color_stddev(hsv, cnt)
         print(f"Contour {i}: color_std={color_std:.2f}")
-        if color_std > 10:  # Threshold for color uniformity (tune as needed)
+        if color_std > 20:  # Increased color stddev threshold
             print(f"Contour {i}: Skipped (color stddev {color_std:.2f})")
             continue
         print(f"Contour {i}: Kept (area={area:.1f}, bbox=({x},{y},{w},{h}), thickness={thickness:.1f}, color_std={color_std:.2f})")
@@ -152,23 +209,23 @@ def detect_path(img, hsv):
     
     print(f"Filtered to {len(filtered)} contours (no border/boxes, uniform color)")
     
-    # Select the longest
-    longest_contour = None
-    max_length = 0
-    
+    # After filtering, keep only the contour containing the known point
+    selected_contour = None
     for cnt in filtered:
-        length = cv2.arcLength(cnt, True)
-        if length > max_length:
-            max_length = length
-            longest_contour = cnt
+        if cv2.pointPolygonTest(cnt, start_point, False) >= 0:
+            selected_contour = cnt
+            print(f"Selected contour contains the starting point {start_point}.")
+            break
+    if selected_contour is not None:
+        filtered_contours = [selected_contour]
+    else:
+        filtered_contours = []
+        print(f"No contour contains the starting point {start_point}.")
     
-    filtered_contours = [longest_contour] if longest_contour is not None else []
-    print(f"Selected contour length: {max_length:.1f}")
-    
-    # Create debug visualization
-    debug_img = img.copy()
-    cv2.drawContours(debug_img, filtered_contours, -1, (0, 255, 0), 2)
-    cv2.imwrite('debug_contours.png', debug_img)
+    # Debug: Show the sampled point on the image in its actual color
+    debug_point_img = img.copy()
+    cv2.circle(debug_point_img, start_point, 8, tuple(int(x) for x in bgr_at_point), -1)
+    cv2.imwrite('debug_point.png', debug_point_img)
     
     return filtered_contours
 
@@ -216,9 +273,10 @@ def main():
     parser.add_argument('--min-thickness', type=float, default=1, help='Minimum path thickness (default: 1)')
     parser.add_argument('--max-thickness', type=float, default=50, help='Maximum path thickness (default: 50)')
     parser.add_argument('--border-margin', type=int, default=20, help='Margin from border to remove (default: 20)')
-    
+    parser.add_argument('--start-x', type=int, required=True, help='X coordinate of a known point on the line')
+    parser.add_argument('--start-y', type=int, required=True, help='Y coordinate of a known point on the line')
     args = parser.parse_args()
-    
+
     # Set default output path if not provided
     if args.output is None:
         input_path = Path(args.input)
@@ -230,7 +288,7 @@ def main():
         img, hsv = preprocess_image(args.input)
         
         # Detect path
-        contours = detect_path(img, hsv)
+        contours = detect_path(img, hsv, args.start_x, args.start_y)
         
         # Simplify contours
         simplified_contours = simplify_contours(contours)
@@ -243,10 +301,10 @@ def main():
         
         print(f"Successfully created vector drawing at: {args.output}")
         print("Debug images have been saved:")
-        print("- debug_mask.png: Initial color mask")
-        print("- debug_mask_cleaned.png: Mask after cleaning")
+        print("- debug_point.png: Circle at the known point")
         print("- debug_all_contours.png: All detected contours")
-        print("- debug_contours.png: Filtered contours")
+        print("- debug_mask.png: Color mask")
+        print("- debug_filtered.png: Original image with filtered pixels highlighted")
         
     except Exception as e:
         print(f"Error processing image: {str(e)}")
