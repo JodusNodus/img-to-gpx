@@ -7,10 +7,6 @@ from pathlib import Path
 from skimage.morphology import skeletonize
 
 # Constants
-DEFAULT_MARGIN = 20
-DEFAULT_EDGE_TOLERANCE = 5
-DEFAULT_AREA_THRESHOLD = 0.05
-DEFAULT_ASPECT_THRESHOLD = 0.7
 DEFAULT_SIMPLIFICATION_EPSILON = 0.003
 
 def preprocess_image(image_path: Path) -> Tuple[np.ndarray, np.ndarray]:
