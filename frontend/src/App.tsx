@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from "react";
 import type { FormEvent, ChangeEvent, MouseEvent } from "react";
-import "./App.css";
 
 interface FormData {
   image: File | null;
@@ -24,8 +23,8 @@ interface Color {
 function App() {
   const [formData, setFormData] = useState<FormData>({
     image: null,
-    startX: 509,
-    startY: 358,
+    startX: 0,
+    startY: 0,
   });
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [points, setPoints] = useState<Points | null>(null);
@@ -205,83 +204,135 @@ function App() {
   }, [imagePreview]);
 
   return (
-    <div className="container">
-      <h1>Image to Line Converter</h1>
+    <div className="min-h-screen bg-gray-900 text-white">
+      <div className="max-w-4xl mx-auto px-4 py-12">
+        <h1 className="text-4xl font-bold mb-12 text-center text-gray-100">
+          Image to Line Converter
+        </h1>
 
-      <form className="card" onSubmit={handleSubmit}>
-        <div>
-          <input type="file" accept="image/png" onChange={handleImageChange} />
-        </div>
-
-        {imagePreview && (
-          <div className="image-preview">
-            <img
-              ref={imageRef}
-              src={imagePreview}
-              alt="Preview"
-              onClick={handleImageClick}
-              title="Click to select start coordinates"
+        <form
+          className="bg-gray-800/50 backdrop-blur-sm p-8 rounded-xl shadow-2xl border border-gray-700/50 mb-8 flex flex-col gap-6"
+          onSubmit={handleSubmit}
+        >
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Upload PNG Image
+            </label>
+            <input
+              type="file"
+              accept="image/png"
+              onChange={handleImageChange}
+              className="w-full p-3 rounded-lg bg-gray-900/50 border border-gray-700/50 text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-600/50 file:text-indigo-200 hover:file:bg-indigo-600/70 cursor-pointer transition-colors"
             />
+          </div>
+
+          {imagePreview && (
+            <div className="my-6 text-center relative">
+              <img
+                ref={imageRef}
+                src={imagePreview}
+                alt="Preview"
+                onClick={handleImageClick}
+                title="Click to select start coordinates"
+                className="max-w-full max-h-[1200px] rounded-lg shadow-xl border border-gray-700/50 cursor-crosshair hover:border-indigo-500/50 transition-all duration-200"
+              />
+            </div>
+          )}
+
+          <div className="flex flex-col sm:flex-row gap-6 items-center justify-center my-4">
+            <div className="flex gap-6 items-center">
+              <label className="flex items-center gap-3 text-gray-300">
+                <span className="text-sm font-medium">Start X:</span>
+                <input
+                  type="number"
+                  name="startX"
+                  value={formData.startX}
+                  onChange={handleCoordinateChange}
+                  min={0}
+                  required
+                  className="w-24 p-2 rounded-lg bg-gray-900/50 border border-gray-700/50 text-white focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                />
+              </label>
+              <label className="flex items-center gap-3 text-gray-300">
+                <span className="text-sm font-medium">Start Y:</span>
+                <input
+                  type="number"
+                  name="startY"
+                  value={formData.startY}
+                  onChange={handleCoordinateChange}
+                  min={0}
+                  required
+                  className="w-24 p-2 rounded-lg bg-gray-900/50 border border-gray-700/50 text-white focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                />
+              </label>
+            </div>
+
+            {selectedColor && (
+              <div className="flex items-center gap-4 p-3 bg-gray-900/50 rounded-lg border border-gray-700/50">
+                <div
+                  className="w-10 h-10 rounded-lg border border-gray-700/50 shadow-lg"
+                  style={{ backgroundColor: selectedColor.hex }}
+                />
+                <div className="flex flex-col gap-1 text-gray-300 text-sm">
+                  <span className="font-medium">
+                    RGB: {selectedColor.r}, {selectedColor.g}, {selectedColor.b}
+                  </span>
+                  <span className="font-medium">HEX: {selectedColor.hex}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading || !formData.image}
+            className="w-full sm:w-auto px-8 py-3 bg-indigo-600/80 text-white rounded-lg font-medium text-base transition-all duration-200 hover:bg-indigo-600 disabled:bg-gray-700/50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:ring-offset-2 focus:ring-offset-gray-900"
+          >
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    fill="none"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+                Processing...
+              </span>
+            ) : (
+              "Convert to Line"
+            )}
+          </button>
+
+          {error && (
+            <p className="text-red-400 text-sm font-medium text-center">
+              {error}
+            </p>
+          )}
+        </form>
+
+        {points && (
+          <div className="mt-8 text-center">
+            <div className="inline-block p-4 bg-gray-800/50 backdrop-blur-sm rounded-xl shadow-2xl border border-gray-700/50">
+              <canvas
+                ref={canvasRef}
+                className="max-w-full rounded-lg border border-gray-700/50 bg-gray-900/50"
+              />
+            </div>
           </div>
         )}
 
-        <div className="coordinates-container">
-          <div className="coordinate-inputs">
-            <label>
-              Start X:
-              <input
-                type="number"
-                name="startX"
-                value={formData.startX}
-                onChange={handleCoordinateChange}
-                min={0}
-                required
-              />
-            </label>
-            <label>
-              Start Y:
-              <input
-                type="number"
-                name="startY"
-                value={formData.startY}
-                onChange={handleCoordinateChange}
-                min={0}
-                required
-              />
-            </label>
-          </div>
-
-          {selectedColor && (
-            <div className="color-info">
-              <div
-                className="color-preview"
-                style={{ backgroundColor: selectedColor.hex }}
-              />
-              <div className="color-values">
-                <span>HEX: {selectedColor.hex}</span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <button type="submit" disabled={loading}>
-          {loading ? "Processing..." : "Generate Line"}
-        </button>
-
-        {error && <p className="error-message">{error}</p>}
-      </form>
-
-      {points && (
-        <div className="card">
-          <h2>Result</h2>
-          <div className="canvas-container">
-            <canvas ref={canvasRef} />
-          </div>
-        </div>
-      )}
-
-      {/* Hidden canvas for color detection */}
-      <canvas ref={colorCanvasRef} style={{ display: "none" }} />
+        <canvas ref={colorCanvasRef} className="hidden" />
+      </div>
     </div>
   );
 }
