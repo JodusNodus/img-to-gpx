@@ -160,7 +160,7 @@ def detect_path(img: np.ndarray, hsv: np.ndarray,
         debug: Whether to print debug information
         
     Returns:
-        List of detected contours
+        List containing only the contour that connects to the starting point
     """
     mean, std = analyze_colors(hsv, debug)
     start_point = (start_x, start_y)
@@ -215,10 +215,36 @@ def detect_path(img: np.ndarray, hsv: np.ndarray,
                                  cv2.RETR_EXTERNAL, 
                                  cv2.CHAIN_APPROX_SIMPLE)
     
+    # Find the contour that contains or is closest to the starting point
+    if contours:
+        # Create a mask for each contour
+        best_contour = None
+        min_distance = float('inf')
+        
+        for contour in contours:
+            # Create a mask for this contour
+            contour_mask = np.zeros_like(skeleton, dtype=np.uint8)
+            cv2.drawContours(contour_mask, [contour], -1, 1, 1)
+            
+            # Find the closest point on this contour to our start point
+            y_indices, x_indices = np.where(contour_mask > 0)
+            if len(x_indices) > 0:
+                distances = np.sqrt((x_indices - start_x)**2 + (y_indices - start_y)**2)
+                min_dist = np.min(distances)
+                
+                if min_dist < min_distance:
+                    min_distance = min_dist
+                    best_contour = contour
+        
+        if best_contour is not None:
+            contours = [best_contour]
+    
     # Save debug image
     if debug:
         debug_img = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
         cv2.drawContours(debug_img, contours, -1, (0, 255, 0), 2)
+        # Draw the starting point
+        cv2.circle(debug_img, (start_x, start_y), 5, (0, 0, 255), -1)
         cv2.imwrite('debug_mask_initial.png', debug_img)
     
     return contours
