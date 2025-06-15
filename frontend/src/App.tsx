@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import type { ChangeEvent, MouseEvent } from "react";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
+// --- Types ---
 interface FormData {
   image: File | null;
 }
@@ -16,6 +19,7 @@ interface Points {
     max_x: number;
     max_y: number;
   };
+  image: File;
 }
 
 interface ImageUploadProps {
@@ -29,7 +33,6 @@ function ImageUpload({ onImageSelect }: ImageUploadProps) {
       onImageSelect(file);
     }
   };
-
   return (
     <div className="space-y-4">
       <h2 className="text-2xl font-semibold text-gray-200">
@@ -54,15 +57,9 @@ interface ImagePreviewProps {
   imageUrl: string;
   points: Points | null;
   onImageClick: (e: MouseEvent<HTMLImageElement>) => void;
-  onNext: () => void;
 }
 
-function ImagePreview({
-  imageUrl,
-  points,
-  onImageClick,
-  onNext,
-}: ImagePreviewProps) {
+function ImagePreview({ imageUrl, points, onImageClick }: ImagePreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
@@ -72,35 +69,26 @@ function ImagePreview({
       const ctx = canvas.getContext("2d");
       const img = imageRef.current;
       if (!ctx) return;
-
       // Set canvas size to match the displayed image size
       const rect = img.getBoundingClientRect();
       canvas.width = rect.width;
       canvas.height = rect.height;
-
-      // Clear the canvas
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-
       // Calculate scale factors
       const scaleX = rect.width / img.naturalWidth;
       const scaleY = rect.height / img.naturalHeight;
-
       // Draw points
       ctx.beginPath();
-      ctx.strokeStyle = "rgba(255, 0, 0, 0.8)"; // Red with some transparency
-      ctx.lineWidth = 3; // Thicker line
-
+      ctx.strokeStyle = "rgba(255, 0, 0, 0.8)";
+      ctx.lineWidth = 3;
       if (points.points.length > 0) {
         const [startX, startY] = points.points[0];
-        // Scale the points to match the displayed image size
         ctx.moveTo(startX * scaleX, startY * scaleY);
-
         for (let i = 1; i < points.points.length; i++) {
           const [x, y] = points.points[i];
           ctx.lineTo(x * scaleX, y * scaleY);
         }
       }
-
       ctx.stroke();
     }
   }, [points]);
@@ -134,135 +122,150 @@ function ImagePreview({
           )}
         </div>
       </div>
-      {points && (
-        <div className="flex justify-end">
-          <button
-            onClick={onNext}
-            className="px-6 py-2 bg-indigo-600/80 text-white rounded-lg font-medium text-base transition-all duration-200 hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:ring-offset-2 focus:ring-offset-gray-900"
-          >
-            Next Step
-          </button>
-        </div>
-      )}
     </div>
   );
 }
 
-interface LineGenerationProps {
+interface MapProps {
   points: Points;
   onBack: () => void;
 }
 
-function LineGeneration({ points, onBack }: LineGenerationProps) {
+function Map({ points, onBack }: MapProps) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<L.Map | null>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
+
+  useEffect(() => {
+    if (!mapRef.current || !points) return;
+    // Initialize map if it doesn't exist
+    if (!mapInstanceRef.current) {
+      mapInstanceRef.current = L.map(mapRef.current).setView([0, 0], 2);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "© OpenStreetMap contributors",
+      }).addTo(mapInstanceRef.current);
+    }
+    const map = mapInstanceRef.current;
+    // Set up image overlay
+    const image = imageRef.current;
+    if (!image) return;
+    // Function to update image position
+    const updateImage = () => {
+      const rect = mapRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      // Wait for image to load to get natural dimensions
+      if (image.naturalWidth === 0) {
+        image.onload = updateImage;
+        return;
+      }
+      // Calculate scale to fit the image while maintaining aspect ratio
+      const scaleX = rect.width / image.naturalWidth;
+      const scaleY = rect.height / image.naturalHeight;
+      const scale = Math.min(scaleX, scaleY);
+      // Calculate centering offset
+      const offsetX = (rect.width - image.naturalWidth * scale) / 2;
+      const offsetY = (rect.height - image.naturalHeight * scale) / 2;
+      image.style.width = `${image.naturalWidth * scale}px`;
+      image.style.height = `${image.naturalHeight * scale}px`;
+      image.style.left = `${offsetX}px`;
+      image.style.top = `${offsetY}px`;
+    };
+    // Update image position when map moves
+    map.on("move", updateImage);
+    map.on("zoom", updateImage);
+    map.on("resize", updateImage);
+    // Initial update
+    updateImage();
+    // Cleanup
+    return () => {
+      map.off("move", updateImage);
+      map.off("zoom", updateImage);
+      map.off("resize", updateImage);
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+    };
+  }, [points]);
+
   return (
     <div className="space-y-4">
-      <h2 className="text-2xl font-semibold text-gray-200">
-        Step 3: Line Details
-      </h2>
-      <div className="p-6 bg-gray-800/50 rounded-lg">
-        <div className="grid grid-cols-2 gap-4 text-sm text-gray-400">
-          <div>
-            <p className="font-medium text-gray-300">Points</p>
-            <p>{points.points.length}</p>
-          </div>
-          <div>
-            <p className="font-medium text-gray-300">Dimensions</p>
-            <p>
-              {points.width} × {points.height}
-            </p>
-          </div>
-          <div>
-            <p className="font-medium text-gray-300">Bounds</p>
-            <p>
-              X: {points.bounds.min_x} to {points.bounds.max_x}
-            </p>
-            <p>
-              Y: {points.bounds.min_y} to {points.bounds.max_y}
-            </p>
-          </div>
-        </div>
-      </div>
-      <div className="flex justify-between">
-        <button
-          onClick={onBack}
-          className="px-6 py-2 bg-gray-700/80 text-white rounded-lg font-medium text-base transition-all duration-200 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500/50 focus:ring-offset-2 focus:ring-offset-gray-900"
-        >
-          Back
-        </button>
-        <button className="px-6 py-2 bg-indigo-600/80 text-white rounded-lg font-medium text-base transition-all duration-200 hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:ring-offset-2 focus:ring-offset-gray-900">
-          Export Line
-        </button>
+      <h2 className="text-2xl font-semibold text-gray-200">Step 3: Map View</h2>
+      <div className="h-[600px] rounded-lg overflow-hidden border border-gray-700/50 relative">
+        <div ref={mapRef} className="w-full h-full" />
+        <img
+          ref={imageRef}
+          src={URL.createObjectURL(points.image)}
+          alt="Overlay"
+          className="absolute pointer-events-none opacity-50"
+          style={{ zIndex: 1000 }}
+        />
       </div>
     </div>
   );
 }
 
+// --- Main App ---
 function App() {
-  const [formData, setFormData] = useState<FormData>({
-    image: null,
-  });
+  const [formData, setFormData] = useState<FormData>({ image: null });
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [points, setPoints] = useState<Points | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
 
+  // Handle image selection
   const handleImageSelect = (file: File) => {
-    setFormData((prev) => ({
-      ...prev,
-      image: file,
-    }));
-    // Create preview URL
+    setFormData((prev) => ({ ...prev, image: file }));
     const url = URL.createObjectURL(file);
     setImagePreview(url);
     setCurrentStep(2);
   };
 
+  // Handle click on image to generate line
   const handleImageClick = async (e: MouseEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
     if (!img) return;
-
-    // Get click position relative to the image
     const rect = img.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-
-    // Calculate actual image coordinates based on the image's natural size
     const scaleX = img.naturalWidth / rect.width;
     const scaleY = img.naturalHeight / rect.height;
-
     const actualX = Math.round(x * scaleX);
     const actualY = Math.round(y * scaleY);
-
-    console.log("Click coordinates:", { x, y, actualX, actualY });
-
-    // Generate line for the new point
     if (formData.image) {
       setError(null);
-
       const data = new FormData();
       data.append("image", formData.image);
       data.append("start_x", String(actualX));
       data.append("start_y", String(actualY));
-
       try {
         const res = await fetch("http://localhost:5131/api/points", {
           method: "POST",
           body: data,
         });
-
         if (!res.ok) {
           const errorData = await res.json();
           setError(errorData.error || "Unknown error");
         } else {
           const pointsData = await res.json();
-          console.log("Received points:", pointsData);
           setPoints(pointsData);
         }
-      } catch (err) {
-        console.error("Error:", err);
+      } catch {
         setError("Network error");
       }
     }
+  };
+
+  // Reset to upload step
+  const resetToUpload = () => {
+    if (imagePreview) {
+      URL.revokeObjectURL(imagePreview);
+    }
+    setFormData({ image: null });
+    setImagePreview(null);
+    setPoints(null);
+    setError(null);
+    setCurrentStep(1);
   };
 
   // Cleanup preview URL when component unmounts
@@ -280,29 +283,48 @@ function App() {
         <h1 className="text-4xl font-bold mb-12 text-center text-gray-100">
           Image to GPX Converter
         </h1>
-
         <div className="bg-gray-800/50 backdrop-blur-sm p-8 rounded-xl shadow-2xl border border-gray-700/50 mb-8">
           {currentStep === 1 && (
             <ImageUpload onImageSelect={handleImageSelect} />
           )}
-
           {currentStep === 2 && imagePreview && (
             <ImagePreview
               imageUrl={imagePreview}
               points={points}
               onImageClick={handleImageClick}
-              onNext={() => setCurrentStep(3)}
             />
           )}
-
           {currentStep === 3 && points && (
-            <LineGeneration points={points} onBack={() => setCurrentStep(2)} />
+            <Map
+              points={{ ...points, image: formData.image! }}
+              onBack={() => setCurrentStep(2)}
+            />
           )}
-
           {error && (
             <p className="text-red-400 text-sm font-medium text-center mt-4">
               {error}
             </p>
+          )}
+          {currentStep > 1 && (
+            <div className="flex justify-between items-center mt-6">
+              <button
+                onClick={resetToUpload}
+                className="px-6 py-2 bg-gray-700/80 text-white rounded-lg font-medium text-base transition-all duration-200 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500/50 focus:ring-offset-2 focus:ring-offset-gray-900"
+              >
+                Upload New Image
+              </button>
+              {currentStep === 2 && (
+                <button
+                  onClick={() => setCurrentStep(3)}
+                  disabled={!points}
+                  className={`px-6 py-2 bg-indigo-600/80 text-white rounded-lg font-medium text-base transition-all duration-200 hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:ring-offset-2 focus:ring-offset-gray-900 ${
+                    !points ? "opacity-50 cursor-not-allowed" : ""
+                  }`}
+                >
+                  Next Step
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
