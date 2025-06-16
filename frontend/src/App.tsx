@@ -1,32 +1,31 @@
 import { useState, useEffect } from "react";
-import type { MouseEvent } from "react";
 import { ImageUpload } from "./components/ImageUpload";
-import { ImagePreview } from "./components/ImagePreview";
 import { ReferencePoints } from "./components/ReferencePoints";
 import { MapProjection } from "./components/MapProjection";
-import type { FormData, Points, ReferencePoint } from "./types";
+import type { FormData, ReferencePoint } from "./types";
+import { ImagePreview } from "./components/ImagePreview";
 
 function App() {
   const [formData, setFormData] = useState<FormData>({ image: null });
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [points, setPoints] = useState<Points | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [overlayOpacity, setOverlayOpacity] = useState(0.5);
   const [overlayContrast, setOverlayContrast] = useState(1.7);
   const [referencePoints, setReferencePoints] = useState<ReferencePoint[]>([
-    {
-      imagePoint: [698, 647],
-      mapPoint: [51.36472561905364, 3.798454391221591],
-      name: "Point 1",
-    },
-    {
-      imagePoint: [1323, 393],
-      mapPoint: [51.53398433262343, 4.45755807705727],
-      name: "Point 2",
-    },
+    // {
+    //   imagePoint: [157, 880],
+    //   mapPoint: [51.20782967751098, 3.226942466625933],
+    //   name: "Point 1",
+    //   color: "#EF4444",
+    // },
+    // {
+    //   imagePoint: [1322, 392],
+    //   mapPoint: [51.531857513789234, 4.462019513445795],
+    //   name: "Point 2",
+    //   color: "#3B82F6",
+    // },
   ]);
-  const [searchError, setSearchError] = useState<string | null>(null);
 
   // Handle image selection
   const handleImageSelect = (file: File) => {
@@ -36,41 +35,6 @@ function App() {
     setCurrentStep(3);
   };
 
-  // Handle click on image to generate line
-  const handleImageClick = async (e: MouseEvent<HTMLImageElement>) => {
-    const img = e.currentTarget;
-    if (!img) return;
-    const rect = img.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const scaleX = img.naturalWidth / rect.width;
-    const scaleY = img.naturalHeight / rect.height;
-    const actualX = Math.round(x * scaleX);
-    const actualY = Math.round(y * scaleY);
-    if (formData.image) {
-      setError(null);
-      const data = new FormData();
-      data.append("image", formData.image);
-      data.append("start_x", String(actualX));
-      data.append("start_y", String(actualY));
-      try {
-        const res = await fetch("http://localhost:5131/api/points", {
-          method: "POST",
-          body: data,
-        });
-        if (!res.ok) {
-          const errorData = await res.json();
-          setError(errorData.error || "Unknown error");
-        } else {
-          const pointsData = await res.json();
-          setPoints(pointsData);
-        }
-      } catch {
-        setError("Network error");
-      }
-    }
-  };
-
   // Reset to upload step
   const resetToUpload = () => {
     if (imagePreview) {
@@ -78,7 +42,6 @@ function App() {
     }
     setFormData({ image: null });
     setImagePreview(null);
-    setPoints(null);
     setError(null);
     setCurrentStep(1);
   };
@@ -92,97 +55,12 @@ function App() {
     };
   }, [imagePreview]);
 
-  // Handle click on map for reference points
-  const handleMapClick = (lat: number, lng: number) => {
-    setReferencePoints((prevPoints) => {
-      const newPoints = [...prevPoints];
-      const activeIndex = newPoints.findIndex((p) => p.mapPoint === null);
-      if (activeIndex !== -1) {
-        newPoints[activeIndex] = {
-          ...newPoints[activeIndex],
-          mapPoint: [lat, lng],
-        };
-      }
-      return newPoints;
-    });
-  };
-
-  // Handle map search
-  const handleMapSearch = async (query: string) => {
-    setSearchError(null);
-    if (!query.trim()) return;
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-          query
-        )}`
-      );
-      const data = await res.json();
-      if (data && data.length > 0) {
-        setSearchError(null);
-      } else {
-        setSearchError("Location not found.");
-      }
-    } catch {
-      setSearchError("Error searching for location.");
-    }
-  };
-
-  // Handle click on image for reference points
-  const handleReferenceImageClick = (e: MouseEvent<HTMLImageElement>) => {
-    const img = e.currentTarget;
-    if (!img) return;
-    const rect = img.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const scaleX = img.naturalWidth / rect.width;
-    const scaleY = img.naturalHeight / rect.height;
-    const actualX = Math.round(x * scaleX);
-    const actualY = Math.round(y * scaleY);
-
-    console.log(actualX, actualY);
-    if (referencePoints.length < 2) {
-      setReferencePoints([
-        ...referencePoints,
-        {
-          imagePoint: [actualX, actualY],
-          mapPoint: null,
-          name: `Point ${referencePoints.length + 1}`,
-        },
-      ]);
-    }
-  };
-
   // Handle transition to map view
   const handleProjectImage = () => {
     if (
       referencePoints.length === 2 &&
       referencePoints.every((p) => p.mapPoint !== null)
     ) {
-      // Create points object for the Map component
-      const imagePoints = referencePoints.map((p) => p.imagePoint);
-      const mapPoints = referencePoints.map((p) => p.mapPoint!);
-
-      // Calculate bounds
-      const minX = Math.min(...mapPoints.map((p) => p[0]));
-      const maxX = Math.max(...mapPoints.map((p) => p[0]));
-      const minY = Math.min(...mapPoints.map((p) => p[1]));
-      const maxY = Math.max(...mapPoints.map((p) => p[1]));
-
-      setPoints({
-        points: imagePoints,
-        normalized_points: mapPoints,
-        width: 0, // These will be set by the backend
-        height: 0,
-        bounds: {
-          min_x: minX,
-          min_y: minY,
-          max_x: maxX,
-          max_y: maxY,
-        },
-        image: formData.image!,
-      });
-
       setCurrentStep(4);
     }
   };
@@ -201,15 +79,12 @@ function App() {
             <ReferencePoints
               imageUrl={imagePreview}
               referencePoints={referencePoints}
-              onImageClick={handleReferenceImageClick}
-              onMapClick={handleMapClick}
-              onSearch={handleMapSearch}
-              searchError={searchError}
+              onReferencePointsChange={setReferencePoints}
             />
           )}
-          {currentStep === 4 && points && (
+          {currentStep === 4 && formData.image && (
             <MapProjection
-              points={points}
+              image={formData.image}
               referencePoints={referencePoints}
               overlayOpacity={overlayOpacity}
               overlayContrast={overlayContrast}
@@ -218,11 +93,7 @@ function App() {
             />
           )}
           {currentStep === 5 && imagePreview && (
-            <ImagePreview
-              imageUrl={imagePreview}
-              points={points}
-              onImageClick={handleImageClick}
-            />
+            <ImagePreview imageUrl={imagePreview} />
           )}
           {error && (
             <p className="text-red-400 text-sm font-medium text-center mt-4">

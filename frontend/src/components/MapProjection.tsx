@@ -1,10 +1,10 @@
 import { useRef, useEffect } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import type { Points, ReferencePoint } from "../types";
+import type { ReferencePoint } from "../types";
 
 interface MapProjectionProps {
-  points: Points;
+  image: File;
   referencePoints: ReferencePoint[];
   overlayOpacity: number;
   overlayContrast: number;
@@ -13,7 +13,7 @@ interface MapProjectionProps {
 }
 
 export function MapProjection({
-  points,
+  image,
   referencePoints,
   overlayOpacity,
   overlayContrast,
@@ -43,9 +43,9 @@ export function MapProjection({
     };
   }, []);
 
-  // Update image overlay when points or opacity/contrast change
+  // Update overlay when points or opacity/contrast change
   useEffect(() => {
-    if (!mapInstanceRef.current || !points || !referencePoints) return;
+    if (!mapInstanceRef.current || !image || !referencePoints) return;
 
     // Remove existing overlay
     if (imageOverlayRef.current) {
@@ -54,72 +54,62 @@ export function MapProjection({
 
     // Get the image dimensions
     const img = new Image();
-    img.src = URL.createObjectURL(points.image);
+    img.src = URL.createObjectURL(image);
 
     img.onload = () => {
       // Get all reference points that have both image and map coordinates
       const validPoints = referencePoints.filter((p) => p.mapPoint);
       if (validPoints.length !== 2) return;
 
-      // Calculate the scale factor based on the two points
       const p1 = validPoints[0];
       const p2 = validPoints[1];
 
-      // Calculate image distance in pixels
+      // Calculate image distances
       const imageDx = p2.imagePoint[0] - p1.imagePoint[0];
       const imageDy = p2.imagePoint[1] - p1.imagePoint[1];
-      const imageDist = Math.sqrt(imageDx * imageDx + imageDy * imageDy);
 
-      // Calculate map distance in meters
-      const mapDist = mapInstanceRef.current!.distance(
-        [p1.mapPoint![0], p1.mapPoint![1]],
-        [p2.mapPoint![0], p2.mapPoint![1]]
-      );
+      // Calculate map distances
+      const mapDx = p2.mapPoint![1] - p1.mapPoint![1];
+      const mapDy = p2.mapPoint![0] - p1.mapPoint![0];
 
-      // Calculate scale factor (meters per pixel)
-      const scaleFactor = mapDist / imageDist;
+      // Calculate scale factors
+      const scaleFactorX = Math.abs(mapDx / imageDx);
+      const scaleFactorY = Math.abs(mapDy / imageDy);
 
-      // Find the top-left point (smallest x and y coordinates)
-      const topLeftPoint = validPoints.reduce((min, point) => {
-        if (
-          point.imagePoint[0] < min.imagePoint[0] ||
-          (point.imagePoint[0] === min.imagePoint[0] &&
-            point.imagePoint[1] < min.imagePoint[1])
-        ) {
-          return point;
-        }
-        return min;
-      });
+      // Use the first reference point as anchor
+      const topLeftLat = p1.mapPoint![0] + p1.imagePoint[1] * scaleFactorY;
+      const topLeftLng = p1.mapPoint![1] - p1.imagePoint[0] * scaleFactorX;
 
-      const refLat = topLeftPoint.mapPoint![0];
-      const refLng = topLeftPoint.mapPoint![1];
-      const refX = topLeftPoint.imagePoint[0];
-      const refY = topLeftPoint.imagePoint[1];
-
-      // Convert image coordinates to map coordinates
-      const latScale = 111320; // meters per degree at equator
-      const lngScale = 111320 * Math.cos((refLat * Math.PI) / 180);
-
-      // Calculate the bounds
-      const bounds = L.latLngBounds([
-        [
-          refLat - (refY * scaleFactor) / latScale,
-          refLng - (refX * scaleFactor) / lngScale,
-        ],
-        [
-          refLat + ((img.height - refY) * scaleFactor) / latScale,
-          refLng + ((img.width - refX) * scaleFactor) / lngScale,
-        ],
-      ]);
+      // Calculate the bottom-right corner position
+      const bottomRightLat = topLeftLat - img.height * scaleFactorY;
+      const bottomRightLng = topLeftLng + img.width * scaleFactorX;
 
       // Create image overlay
-      const imageUrl = URL.createObjectURL(points.image);
-      imageOverlayRef.current = L.imageOverlay(imageUrl, bounds, {
-        opacity: overlayOpacity,
-      }).addTo(mapInstanceRef.current!);
+      const imageUrl = URL.createObjectURL(image);
+      const overlay = L.imageOverlay(
+        imageUrl,
+        [
+          [topLeftLat, topLeftLng],
+          [bottomRightLat, bottomRightLng],
+        ],
+        {
+          opacity: overlayOpacity,
+        }
+      ).addTo(mapInstanceRef.current!);
+
+      // Apply contrast using CSS filter
+      const imgElement = overlay.getElement();
+      if (imgElement) {
+        imgElement.style.filter = `contrast(${overlayContrast})`;
+      }
+
+      imageOverlayRef.current = overlay;
 
       // Fit map to bounds
-      mapInstanceRef.current!.fitBounds(bounds);
+      mapInstanceRef.current!.fitBounds([
+        [topLeftLat, topLeftLng],
+        [bottomRightLat, bottomRightLng],
+      ]);
 
       // Cleanup
       return () => {
@@ -130,7 +120,7 @@ export function MapProjection({
         URL.revokeObjectURL(imageUrl);
       };
     };
-  }, [points, referencePoints, overlayOpacity]);
+  }, [image, referencePoints, overlayOpacity, overlayContrast]);
 
   return (
     <div className="space-y-4">

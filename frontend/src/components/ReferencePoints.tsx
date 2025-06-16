@@ -1,173 +1,86 @@
-import { useRef, useEffect, useState } from "react";
+import { useState, useRef } from "react";
 import type { MouseEvent } from "react";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
-
-interface ReferencePoint {
-  imagePoint: [number, number];
-  mapPoint: [number, number] | null;
-  name: string;
-}
+import { Map } from "./Map";
+import type { ReferencePoint } from "../types";
 
 interface ReferencePointsProps {
   imageUrl: string;
   referencePoints: ReferencePoint[];
-  onImageClick: (e: MouseEvent<HTMLImageElement>) => void;
-  onMapClick: (lat: number, lng: number) => void;
-  onSearch: (query: string) => Promise<void>;
-  searchError: string | null;
+  onReferencePointsChange: (points: ReferencePoint[]) => void;
 }
+
+// Define colors for points
+const POINT_COLORS = [
+  { name: "Red", color: "#EF4444" },
+  { name: "Blue", color: "#3B82F6" },
+];
 
 export function ReferencePoints({
   imageUrl,
   referencePoints,
-  onImageClick,
-  onMapClick,
-  onSearch,
-  searchError,
+  onReferencePointsChange,
 }: ReferencePointsProps) {
-  console.log("referencePoints", referencePoints);
-  const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<L.Map | null>(null);
-  const [search, setSearch] = useState("");
+  const [searchError, setSearchError] = useState<string | null>(null);
   const imageRef = useRef<HTMLImageElement>(null);
-  const [phase, setPhase] = useState<"image" | "map">("image");
-  const [pendingMapClick, setPendingMapClick] = useState<
-    [number, number] | null
-  >(null);
   const [imageLoaded, setImageLoaded] = useState(false);
 
-  // Define colors for points
-  const colors = [
-    { name: "Red", class: "bg-red-500" },
-    { name: "Blue", class: "bg-blue-500" },
-  ];
-
-  // Initialize map only once
-  useEffect(() => {
-    if (!mapRef.current || mapInstanceRef.current) return;
-
-    // Create map instance
-    mapInstanceRef.current = L.map(mapRef.current).setView([0, 0], 2);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "© OpenStreetMap contributors",
-    }).addTo(mapInstanceRef.current);
-
-    // Add click handler
-    mapInstanceRef.current.on("click", (e) => {
-      if (phase === "map") {
-        setPendingMapClick([e.latlng.lat, e.latlng.lng]);
-      }
-    });
-
-    // Cleanup on unmount
-    return () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
-    };
-  }, [phase]);
-
-  // Update markers when reference points change
-  useEffect(() => {
-    if (!mapInstanceRef.current) return;
-
-    // Clear existing markers
-    mapInstanceRef.current.eachLayer((layer) => {
-      if (layer instanceof L.Marker) {
-        mapInstanceRef.current?.removeLayer(layer);
-      }
-    });
-
-    // Add new markers for each point that has a location
-    referencePoints.forEach((point, index) => {
-      if (point.mapPoint) {
-        const [lat, lng] = point.mapPoint;
-        const colorClass = colors[index].class;
-        const marker = L.marker([lat, lng], {
-          icon: L.divIcon({
-            className: "custom-marker",
-            html: `<div class='w-3 h-3 rounded-full border border-white ${colorClass}'></div>`,
-            iconSize: [12, 12],
-            iconAnchor: [6, 6],
-          }),
-        });
-
-        // Add click handler to marker
-        marker.on("click", () => {
-          setPendingMapClick([lat, lng]);
-          // Find the index of this point
-          const pointIndex = referencePoints.findIndex(
-            (p) => p.mapPoint && p.mapPoint[0] === lat && p.mapPoint[1] === lng
-          );
-          if (pointIndex !== -1) {
-            // Remove the old point
-            const newPoints = [...referencePoints];
-            newPoints[pointIndex] = {
-              ...newPoints[pointIndex],
-              mapPoint: null,
-            };
-            onMapClick(lat, lng); // This will update the points
-          }
-        });
-
-        marker.addTo(mapInstanceRef.current!);
-      }
-    });
-
-    // Add pending marker if exists
-    if (pendingMapClick) {
-      const [lat, lng] = pendingMapClick;
-      L.marker([lat, lng], {
-        icon: L.divIcon({
-          className: "custom-marker",
-          html: `<div class='w-3 h-3 rounded-full border border-white bg-yellow-500'></div>`,
-          iconSize: [12, 12],
-          iconAnchor: [6, 6],
-        }),
-      }).addTo(mapInstanceRef.current!);
+  // Handle click on map for reference points
+  const handleMapClick = (lat: number, lng: number) => {
+    const newPoints = [...referencePoints];
+    const activeIndex = newPoints.findIndex((p) => p.mapPoint === null);
+    if (activeIndex !== -1) {
+      newPoints[activeIndex] = {
+        ...newPoints[activeIndex],
+        mapPoint: [lat, lng],
+      };
+      onReferencePointsChange(newPoints);
     }
-  }, [referencePoints, pendingMapClick, colors]);
+  };
 
-  // Handle search
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!search.trim() || !mapInstanceRef.current) return;
+  // Handle map search
+  const handleMapSearch = async (query: string) => {
+    setSearchError(null);
+    if (!query.trim()) return;
     try {
       const res = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-          search
+          query
         )}`
       );
       const data = await res.json();
       if (data && data.length > 0) {
-        const { lat, lon } = data[0];
-        mapInstanceRef.current.setView([parseFloat(lat), parseFloat(lon)], 10);
+        setSearchError(null);
+      } else {
+        setSearchError("Location not found.");
       }
-      onSearch(search);
     } catch {
-      onSearch(search);
+      setSearchError("Error searching for location.");
     }
   };
 
-  // Move to map phase when all points are selected
-  useEffect(() => {
-    if (phase === "image" && referencePoints.length === 2) {
-      setPhase("map");
-    }
-  }, [referencePoints.length, phase]);
+  // Handle click on image for reference points
+  const handleReferenceImageClick = (e: MouseEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    if (!img) return;
+    const rect = img.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const scaleX = img.naturalWidth / rect.width;
+    const scaleY = img.naturalHeight / rect.height;
+    const actualX = Math.round(x * scaleX);
+    const actualY = Math.round(y * scaleY);
 
-  // Handle point selection
-  const handlePointSelect = (colorIndex: number) => {
-    if (pendingMapClick) {
-      const newPoints = [...referencePoints];
-      newPoints[colorIndex] = {
-        ...newPoints[colorIndex],
-        mapPoint: pendingMapClick,
-      };
-      onMapClick(pendingMapClick[0], pendingMapClick[1]);
-      setPendingMapClick(null);
+    if (referencePoints.length < 2) {
+      const newPointIndex = referencePoints.length;
+      onReferencePointsChange([
+        ...referencePoints,
+        {
+          imagePoint: [actualX, actualY],
+          mapPoint: null,
+          name: `Point ${newPointIndex + 1}`,
+          color: POINT_COLORS[newPointIndex].color,
+        },
+      ]);
     }
   };
 
@@ -188,160 +101,56 @@ export function ReferencePoints({
   return (
     <div className="space-y-4">
       <h2 className="text-2xl font-semibold text-gray-200">
-        Step 3: Select Reference Points
+        Step 3: Set Reference Points
       </h2>
       <div className="text-sm text-gray-400 mb-4">
-        {phase === "image"
-          ? referencePoints.length < 2
-            ? `Click on the image to select point ${
-                referencePoints.length + 1
-              } of 2`
-            : "All points selected! Now set their locations on the map."
-          : pendingMapClick
-          ? "Select which point to place at this location"
-          : "Click on the map where you want to place a point"}
+        Click on the image to set reference points, then click on the map to set
+        their corresponding locations. You need to set exactly 2 points.
       </div>
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <h3 className="text-lg font-medium text-gray-200 mb-2">Image</h3>
-          <div className="relative">
-            <img
-              ref={imageRef}
-              src={imageUrl}
-              alt="Reference"
-              onLoad={handleImageLoad}
-              onClick={phase === "image" ? onImageClick : undefined}
-              className={`max-w-full rounded-lg shadow-xl border border-gray-700/50 ${
-                phase === "image"
-                  ? "cursor-crosshair hover:border-indigo-500/50"
-                  : ""
-              } transition-all duration-200`}
-            />
-            {imageLoaded &&
-              referencePoints.map((point, index) => {
-                if (!imageRef.current) return null;
-                // Calculate position as percentage of image dimensions
-                const percentX =
-                  (point.imagePoint[0] / imageRef.current.naturalWidth) * 100;
-                const percentY =
-                  (point.imagePoint[1] / imageRef.current.naturalHeight) * 100;
-                const colorClass = colors[index].class;
+        <div className="relative h-[600px] rounded-lg overflow-hidden border border-gray-700/50">
+          <img
+            ref={imageRef}
+            src={imageUrl}
+            alt="Reference"
+            className="w-full h-auto cursor-crosshair"
+            onClick={handleReferenceImageClick}
+            onLoad={handleImageLoad}
+          />
+          {imageLoaded &&
+            referencePoints.map((point, index) => {
+              if (!imageRef.current) return null;
+              const rect = imageRef.current.getBoundingClientRect();
 
-                console.log("Point position:", {
-                  point: point.imagePoint,
-                  natural: [
-                    imageRef.current.naturalWidth,
-                    imageRef.current.naturalHeight,
-                  ],
-                  percent: [percentX, percentY],
-                });
+              // Calculate the scale
+              const scale = rect.width / imageRef.current.naturalWidth;
 
-                return (
-                  <div
-                    key={index}
-                    className={`absolute w-3 h-3 rounded-full border border-white transform -translate-x-1/2 -translate-y-1/2 ${colorClass}`}
-                    style={{
-                      left: `${percentX}%`,
-                      top: `${percentY}%`,
-                    }}
-                  />
-                );
-              })}
-          </div>
+              // Calculate the point position
+              const pointX = point.imagePoint[0] * scale;
+              const pointY = point.imagePoint[1] * scale;
+
+              return (
+                <div
+                  key={index}
+                  className="absolute w-4 h-4 -ml-2 -mt-2 rounded-full border-2 border-white shadow-lg"
+                  style={{
+                    left: `${pointX}px`,
+                    top: `${pointY}px`,
+                    backgroundColor: point.color || POINT_COLORS[index].color,
+                  }}
+                />
+              );
+            })}
         </div>
-
-        <div>
-          <h3 className="text-lg font-medium text-gray-200 mb-2">Map</h3>
-          <form onSubmit={handleSearch} className="flex gap-2 mb-2">
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search for a place or address..."
-              className="flex-1 px-3 py-2 rounded-lg bg-gray-900/70 border border-gray-700/50 text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <button
-              type="submit"
-              className="px-4 py-2 bg-indigo-600/80 text-white rounded-lg font-medium text-base transition-all duration-200 hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-            >
-              Search
-            </button>
-          </form>
-          {searchError && (
-            <div className="text-red-400 text-sm mb-2">{searchError}</div>
-          )}
-          <div className="h-[400px] rounded-lg overflow-hidden border border-gray-700/50">
-            <div ref={mapRef} className="w-full h-full" />
-          </div>
+        <div className="h-[600px] rounded-lg overflow-hidden border border-gray-700/50">
+          <Map
+            onMapClick={handleMapClick}
+            onSearch={handleMapSearch}
+            searchError={searchError}
+            referencePoints={referencePoints}
+          />
         </div>
       </div>
-
-      {pendingMapClick && (
-        <div className="mt-6 space-y-4">
-          <h3 className="text-lg font-medium text-gray-200">
-            Select Point Color
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {colors.map((color, index) => (
-              <button
-                key={color.name}
-                onClick={() => handlePointSelect(index)}
-                className={`p-4 rounded-lg transition-all duration-200 ${
-                  referencePoints[index]?.mapPoint !== null
-                    ? "bg-gray-700/50 text-gray-400"
-                    : "bg-gray-800/50 hover:bg-gray-700/50 hover:scale-105"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <div className={`w-6 h-6 rounded-full ${color.class}`} />
-                  <span className="text-sm font-medium text-gray-300">
-                    {referencePoints[index]?.mapPoint
-                      ? "Click to move this point"
-                      : "Click to place this point"}
-                  </span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {!pendingMapClick && (
-        <div className="mt-6 space-y-4">
-          <h3 className="text-lg font-medium text-gray-200">
-            Reference Points
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {referencePoints.map((point, index) => (
-              <div key={index} className="bg-gray-800/50 p-4 rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <div
-                    className={`w-3 h-3 rounded-full ${
-                      point.mapPoint !== null
-                        ? colors[index].class
-                        : "bg-gray-500"
-                    }`}
-                  />
-                  <span className="text-sm font-medium text-gray-300">
-                    {colors[index].name} Point
-                  </span>
-                </div>
-                <div className="text-sm text-gray-400">
-                  {point.mapPoint ? (
-                    <>
-                      Location: {point.mapPoint[0].toFixed(6)},{" "}
-                      {point.mapPoint[1].toFixed(6)}
-                    </>
-                  ) : (
-                    "No location set"
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

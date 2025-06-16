@@ -16,6 +16,7 @@ export interface ReferencePoint {
   imagePoint: [number, number];
   mapPoint: [number, number] | null;
   name: string;
+  color: string;
 }
 
 export interface FormData {

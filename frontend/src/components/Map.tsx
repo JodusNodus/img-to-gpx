@@ -1,98 +1,85 @@
-import { useRef, useEffect, useMemo, useState } from "react";
+import { useRef, useEffect, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-
-interface Points {
-  points: [number, number][];
-  normalized_points: [number, number][];
-  width: number;
-  height: number;
-  bounds: {
-    min_x: number;
-    min_y: number;
-    max_x: number;
-    max_y: number;
-  };
-  image: File;
-}
+import type { ReferencePoint } from "../types";
 
 interface MapProps {
-  points: Points;
-  overlayOpacity: number;
-  overlayContrast: number;
+  onMapClick: (lat: number, lng: number) => void;
+  onSearch: (query: string) => Promise<void>;
+  searchError: string | null;
+  referencePoints?: ReferencePoint[];
 }
 
-export function Map({ points, overlayOpacity, overlayContrast }: MapProps) {
+export function Map({
+  onMapClick,
+  onSearch,
+  searchError,
+  referencePoints = [],
+}: MapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
-  const imageRef = useRef<HTMLImageElement>(null);
   const [search, setSearch] = useState("");
-  const [searchError, setSearchError] = useState("");
 
-  // Memoize the object URL for the image
-  const imageUrl = useMemo(() => {
-    if (!points.image) return "";
-    const url = URL.createObjectURL(points.image);
-    return url;
-  }, [points.image]);
-
-  // Revoke the object URL on cleanup
-  useEffect(() => {
-    return () => {
-      if (imageUrl) URL.revokeObjectURL(imageUrl);
-    };
-  }, [imageUrl]);
-
-  // Only initialize the map once
+  // Initialize map
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
+
+    // Create map instance
     mapInstanceRef.current = L.map(mapRef.current).setView([0, 0], 2);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "© OpenStreetMap contributors",
     }).addTo(mapInstanceRef.current);
-  }, []);
 
-  // Calculate image bounds and create overlay when points change
+    // Add click handler
+    mapInstanceRef.current.on("click", (e) => {
+      onMapClick(e.latlng.lat, e.latlng.lng);
+    });
+
+    // Cleanup on unmount
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+    };
+  }, [onMapClick]);
+
+  // Update markers when reference points change
   useEffect(() => {
-    if (!mapInstanceRef.current || !points || !imageRef.current) return;
+    if (!mapInstanceRef.current) return;
 
-    // Get the reference points from the points object
-    const refPoints = points.points.map((point, index) => ({
-      image: point,
-      map: points.normalized_points[index],
-    }));
+    // Clear existing markers
+    mapInstanceRef.current.eachLayer((layer) => {
+      if (layer instanceof L.Marker) {
+        mapInstanceRef.current?.removeLayer(layer);
+      }
+    });
 
-    // Calculate the bounds of the image on the map
-    const bounds = L.latLngBounds(refPoints.map((p) => p.map));
+    // Add new markers for each point that has a location
+    referencePoints.forEach((point, index) => {
+      if (point.mapPoint) {
+        const [lat, lng] = point.mapPoint;
+        const marker = L.marker([lat, lng], {
+          icon: L.divIcon({
+            className: "custom-marker",
+            html: `<div class='w-3 h-3 rounded-full border border-white' style='background-color: ${point.color}'></div>`,
+            iconSize: [12, 12],
+            iconAnchor: [6, 6],
+          }),
+        }).addTo(mapInstanceRef.current!);
 
-    // Create or update the image overlay
-    if (imageRef.current) {
-      const imageOverlay = L.imageOverlay(imageUrl, bounds, {
-        opacity: overlayOpacity,
-        interactive: false,
-      }).addTo(mapInstanceRef.current);
+        // Add click handler to marker
+        marker.on("click", () => {
+          onMapClick(lat, lng);
+        });
+      }
+    });
+  }, [referencePoints, onMapClick]);
 
-      // Fit the map to show the entire image
-      mapInstanceRef.current.fitBounds(bounds);
-
-      // Cleanup
-      return () => {
-        imageOverlay.remove();
-      };
-    }
-  }, [points, imageUrl, overlayOpacity]);
-
-  // Update overlay style when contrast changes
-  useEffect(() => {
-    if (!imageRef.current) return;
-    imageRef.current.style.filter = `contrast(${overlayContrast})`;
-  }, [overlayContrast]);
-
-  // Search handler
+  // Handle search
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSearchError("");
-    if (!search.trim()) return;
+    if (!search.trim() || !mapInstanceRef.current) return;
     try {
       const res = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
@@ -102,23 +89,16 @@ export function Map({ points, overlayOpacity, overlayContrast }: MapProps) {
       const data = await res.json();
       if (data && data.length > 0) {
         const { lat, lon } = data[0];
-        if (mapInstanceRef.current) {
-          mapInstanceRef.current.setView(
-            [parseFloat(lat), parseFloat(lon)],
-            10
-          );
-        }
-      } else {
-        setSearchError("Location not found.");
+        mapInstanceRef.current.setView([parseFloat(lat), parseFloat(lon)], 10);
       }
+      onSearch(search);
     } catch {
-      setSearchError("Error searching for location.");
+      onSearch(search);
     }
   };
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-2xl font-semibold text-gray-200">Step 4: Map View</h2>
+    <div className="h-full flex flex-col">
       <form onSubmit={handleSearch} className="flex gap-2 mb-2">
         <input
           type="text"
@@ -137,17 +117,8 @@ export function Map({ points, overlayOpacity, overlayContrast }: MapProps) {
       {searchError && (
         <div className="text-red-400 text-sm mb-2">{searchError}</div>
       )}
-      <div className="h-[600px] rounded-lg overflow-hidden border border-gray-700/50 relative">
+      <div className="flex-1">
         <div ref={mapRef} className="w-full h-full" />
-        <img
-          ref={imageRef}
-          src={imageUrl}
-          alt="Overlay"
-          style={{
-            display: "none", // Hide the original image as we're using Leaflet's imageOverlay
-            filter: `contrast(${overlayContrast})`,
-          }}
-        />
       </div>
     </div>
   );
