@@ -93,3 +93,20 @@ def detect_path(img: np.ndarray, hsv: np.ndarray,
         logger.info(f"Debug image saved: {debug_path}")
     
     return list(contours)
+
+def simplify_contour(contour: np.ndarray, epsilon: float = 0.05) -> np.ndarray:
+    """
+    Simplify a contour using the Douglas-Peucker algorithm.
+    
+    Args:
+        contour: The input contour to simplify
+        epsilon: Approximation accuracy. Higher values result in more simplification.
+                Value is relative to the contour perimeter.
+    
+    Returns:
+        Simplified contour
+    """
+    perimeter = cv2.arcLength(contour, True)
+    epsilon = epsilon * perimeter
+    simplified = cv2.approxPolyDP(contour, epsilon, True)
+    return simplified
