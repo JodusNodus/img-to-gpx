@@ -5,4 +5,5 @@ svgwrite>=1.4.3
 scipy>=1.10.0
 flask==3.0.2
 flask-cors==4.0.0
-python-dotenv==1.0.1 
+python-dotenv==1.0.1
+requests>=2.31.0 

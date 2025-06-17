@@ -8,6 +8,7 @@ from typing import Tuple, Union, Any, List
 import numpy as np
 sys.path.append(str(Path(__file__).parent))
 from img_to_line import preprocess_image, detect_path
+from line_snapper import LineSnapper
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -34,6 +35,10 @@ CORS(app, resources={
         "allow_headers": ["Content-Type"]
     }
 })
+
+# Initialize GPX snapper with Valhalla HTTP API URL
+VALHALLA_URL = os.getenv("VALHALLA_URL", "http://localhost:8002")
+line_snapper = LineSnapper(VALHALLA_URL)
 
 def create_response(data: Any, status_code: int = 200) -> Tuple[Response, int]:
     """Create a standardized response with proper CORS headers."""
@@ -120,6 +125,23 @@ def generate_points() -> Tuple[Response, int]:
             os.remove(tmp_path)
         except Exception as e:
             logger.warning(f"Error cleaning up temporary files: {str(e)}")
+
+@app.route('/api/snap-points', methods=['POST'])
+def snap_points() -> Tuple[Response, int]:
+    """Snap points to the road network."""
+    try:
+        data = request.get_json()
+        if not data or "points" not in data:
+            return create_response({'error': 'No points provided'}, 400)
+
+        points = data["points"]
+        radius = float(data.get("radius", 10))  # Default radius is 10 meters
+
+        snapped_points = line_snapper.snap_points(points, radius)
+        return create_response({"points": snapped_points})
+    except Exception as e:
+        logger.error(f"Error snapping points: {str(e)}", exc_info=True)
+        return create_response({'error': str(e)}, 500)
 
 if __name__ == '__main__':
     app.run(debug=True, port=5131) 

@@ -6,7 +6,8 @@ import type { ReferencePoint } from "../types";
 interface MapProjectionProps {
   image: File;
   referencePoints: ReferencePoint[];
-  points?: [number, number][];
+  points: [number, number][];
+  onPointsChange?: (points: [number, number][]) => void;
 }
 
 function createGPXContent(points: [number, number][]): string {
@@ -40,11 +41,13 @@ export function MapProjection({
   image,
   referencePoints,
   points = [],
+  onPointsChange,
 }: MapProjectionProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const imageOverlayRef = useRef<L.ImageOverlay | null>(null);
   const polylineRef = useRef<L.Polyline | null>(null);
+  const snappedPolylineRef = useRef<L.Polyline | null>(null);
   const startMarkerRef = useRef<L.Marker | null>(null);
   const endMarkerRef = useRef<L.Marker | null>(null);
   const [showOverlay, setShowOverlay] = useState(false);
@@ -348,6 +351,64 @@ export function MapProjection({
     URL.revokeObjectURL(url);
   };
 
+  const handleSnapToRoads = async () => {
+    if (!polylineRef.current || !mapInstanceRef.current) return;
+
+    try {
+      // Get the current points from the polyline
+      const path = polylineRef.current.getLatLngs() as L.LatLng[];
+      const points = path.map((point: L.LatLng) => ({
+        lat: point.lat,
+        lng: point.lng,
+      }));
+
+      console.log("Sending points to backend:", points);
+
+      const response = await fetch("http://localhost:5131/api/snap-points", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          points: points.map((p: { lat: number; lng: number }) => [
+            p.lat,
+            p.lng,
+          ]),
+          radius: 100, // 100 meter search radius
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log("Received snapped points:", data.points);
+
+      // Create a new polyline for the snapped route
+      if (snappedPolylineRef.current) {
+        snappedPolylineRef.current.remove();
+      }
+
+      const snappedPath = data.points.map(([lat, lng]: [number, number]) => ({
+        lat,
+        lng,
+      }));
+
+      console.log("Original points:", points);
+      console.log("Snapped points:", snappedPath);
+
+      snappedPolylineRef.current = L.polyline(snappedPath, {
+        color: "blue",
+        weight: 2,
+        opacity: 1.0,
+        dashArray: "10, 2", // Dashed line pattern
+      }).addTo(mapInstanceRef.current);
+    } catch (error) {
+      console.error("Error snapping to roads:", error);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <h2 className="text-2xl font-semibold text-gray-200">
@@ -363,6 +424,15 @@ export function MapProjection({
           className="px-4 py-2 bg-indigo-600/80 text-white rounded-lg font-medium text-base transition-all duration-200 hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
         >
           {showOverlay ? "Hide Image" : "Show Image"}
+        </button>
+        <button
+          onClick={handleSnapToRoads}
+          disabled={points.length === 0}
+          className={`px-4 py-2 bg-blue-600/80 text-white rounded-lg font-medium text-base transition-all duration-200 hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 ${
+            points.length === 0 ? "opacity-50 cursor-not-allowed" : ""
+          }`}
+        >
+          Snap to Roads
         </button>
         <button
           onClick={handleExportGPX}

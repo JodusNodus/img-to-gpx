@@ -51,3 +51,9 @@ The program uses the following default parameters for line detection:
 - Edge detection thresholds: 50 and 150
 
 You can modify these parameters in the code if needed for different results.
+
+mkdir custom_files
+
+docker run -dt --name valhalla_gis-ops -p 8002:8002 -v $PWD/custom_files:/custom_files ghcr.io/nilsnolde/docker-valhalla/valhalla:latest
+
+wget -O custom_files/netherlands-latest.osm.pbf https://download.geofabrik.de/europe/netherlands-latest.osm.pbf

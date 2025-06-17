@@ -114,9 +114,6 @@ def detect_path(img: np.ndarray, hsv: np.ndarray,
     # Find the longest path in the graph
     path = find_longest_path(G)
 
-    # Log the path for debugging
-    logger.debug(f"Raw path from graph: {path}")
-
     # Filter out any non-tuple elements robustly
     filtered_path = []
     for p in path:
