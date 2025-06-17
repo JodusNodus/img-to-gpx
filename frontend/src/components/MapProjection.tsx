@@ -45,6 +45,8 @@ export function MapProjection({
   const mapInstanceRef = useRef<L.Map | null>(null);
   const imageOverlayRef = useRef<L.ImageOverlay | null>(null);
   const polylineRef = useRef<L.Polyline | null>(null);
+  const startMarkerRef = useRef<L.Marker | null>(null);
+  const endMarkerRef = useRef<L.Marker | null>(null);
   const [showOverlay, setShowOverlay] = useState(false);
   const [xOffset, setXOffset] = useState(0);
   const [yOffset, setYOffset] = useState(0);
@@ -152,10 +154,18 @@ export function MapProjection({
     )
       return;
 
-    // Remove existing polyline
+    // Remove existing polyline and markers
     if (polylineRef.current) {
       polylineRef.current.remove();
       polylineRef.current = null;
+    }
+    if (startMarkerRef.current) {
+      startMarkerRef.current.remove();
+      startMarkerRef.current = null;
+    }
+    if (endMarkerRef.current) {
+      endMarkerRef.current.remove();
+      endMarkerRef.current = null;
     }
 
     // Get all reference points that have both image and map coordinates
@@ -198,13 +208,48 @@ export function MapProjection({
       opacity: 0.8,
     }).addTo(mapInstanceRef.current!);
 
+    // Create start and end markers
+    const startIcon = L.divIcon({
+      className: "custom-div-icon",
+      html: `<div style="background-color: #22c55e; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
+      iconSize: [12, 12],
+      iconAnchor: [6, 6],
+    });
+
+    const endIcon = L.divIcon({
+      className: "custom-div-icon",
+      html: `<div style="background-color: #ef4444; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
+      iconSize: [12, 12],
+      iconAnchor: [6, 6],
+    });
+
+    const startMarker = L.marker(mapPoints[0], { icon: startIcon })
+      .addTo(mapInstanceRef.current!)
+      .bindTooltip("Start", { permanent: true, direction: "top" });
+
+    const endMarker = L.marker(mapPoints[mapPoints.length - 1], {
+      icon: endIcon,
+    })
+      .addTo(mapInstanceRef.current!)
+      .bindTooltip("End", { permanent: true, direction: "top" });
+
     polylineRef.current = polyline;
+    startMarkerRef.current = startMarker;
+    endMarkerRef.current = endMarker;
 
     // Cleanup
     return () => {
       if (polylineRef.current) {
         polylineRef.current.remove();
         polylineRef.current = null;
+      }
+      if (startMarkerRef.current) {
+        startMarkerRef.current.remove();
+        startMarkerRef.current = null;
+      }
+      if (endMarkerRef.current) {
+        endMarkerRef.current.remove();
+        endMarkerRef.current = null;
       }
     };
   }, [points, xOffset, yOffset, image, referencePoints]);
