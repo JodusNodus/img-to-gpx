@@ -48,8 +48,6 @@ export function MapProjection({
   const startMarkerRef = useRef<L.Marker | null>(null);
   const endMarkerRef = useRef<L.Marker | null>(null);
   const [showOverlay, setShowOverlay] = useState(false);
-  const [xOffset, setXOffset] = useState(0);
-  const [yOffset, setYOffset] = useState(0);
 
   // Initialize map
   useEffect(() => {
@@ -227,11 +225,8 @@ export function MapProjection({
 
     // Transform points from image coordinates to map coordinates
     const mapPoints = points.map(([x, y]) => {
-      // Apply offsets to the points
-      const adjustedX = x + xOffset;
-      const adjustedY = y + yOffset;
-      const lat = topLeftLat - adjustedY * avgScaleY;
-      const lng = topLeftLng + adjustedX * avgScaleX;
+      const lat = topLeftLat - y * avgScaleY;
+      const lng = topLeftLng + x * avgScaleX;
       return [lat, lng] as [number, number];
     });
 
@@ -286,7 +281,7 @@ export function MapProjection({
         endMarkerRef.current = null;
       }
     };
-  }, [points, xOffset, yOffset, image, referencePoints]);
+  }, [points, image, referencePoints]);
 
   const handleExportGPX = () => {
     if (!mapInstanceRef.current || points.length === 0) return;
@@ -333,10 +328,8 @@ export function MapProjection({
 
     // Transform points from image coordinates to map coordinates
     const mapPoints = points.map(([x, y]) => {
-      const adjustedX = x + xOffset;
-      const adjustedY = y + yOffset;
-      const lat = topLeftLat - adjustedY * avgScaleY;
-      const lng = topLeftLng + adjustedX * avgScaleX;
+      const lat = topLeftLat - y * avgScaleY;
+      const lng = topLeftLng + x * avgScaleX;
       return [lat, lng] as [number, number];
     });
 
@@ -362,59 +355,24 @@ export function MapProjection({
       </h2>
       <div className="text-sm text-gray-400 mb-4">
         The line has been projected onto the map based on your reference points.
-        You can toggle the image overlay to help with alignment and use the
-        sliders to fine-tune the line position.
+        You can toggle the image overlay to help with alignment.
       </div>
-      <div className="flex justify-between items-center mb-4">
-        <div className="flex gap-4 items-center">
-          <div className="flex items-center gap-2">
-            <label htmlFor="xOffset" className="text-gray-200">
-              X Offset:
-            </label>
-            <input
-              type="range"
-              id="xOffset"
-              min="-100"
-              max="100"
-              value={xOffset}
-              onChange={(e) => setXOffset(parseInt(e.target.value))}
-              className="w-32"
-            />
-            <span className="text-gray-400 w-12">{xOffset}px</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <label htmlFor="yOffset" className="text-gray-200">
-              Y Offset:
-            </label>
-            <input
-              type="range"
-              id="yOffset"
-              min="-100"
-              max="100"
-              value={yOffset}
-              onChange={(e) => setYOffset(parseInt(e.target.value))}
-              className="w-32"
-            />
-            <span className="text-gray-400 w-12">{yOffset}px</span>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setShowOverlay(!showOverlay)}
-            className="px-4 py-2 bg-indigo-600/80 text-white rounded-lg font-medium text-base transition-all duration-200 hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-          >
-            {showOverlay ? "Hide Image" : "Show Image"}
-          </button>
-          <button
-            onClick={handleExportGPX}
-            disabled={points.length === 0}
-            className={`px-4 py-2 bg-green-600/80 text-white rounded-lg font-medium text-base transition-all duration-200 hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500/50 ${
-              points.length === 0 ? "opacity-50 cursor-not-allowed" : ""
-            }`}
-          >
-            Export GPX
-          </button>
-        </div>
+      <div className="flex justify-end gap-2 mb-4">
+        <button
+          onClick={() => setShowOverlay(!showOverlay)}
+          className="px-4 py-2 bg-indigo-600/80 text-white rounded-lg font-medium text-base transition-all duration-200 hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+        >
+          {showOverlay ? "Hide Image" : "Show Image"}
+        </button>
+        <button
+          onClick={handleExportGPX}
+          disabled={points.length === 0}
+          className={`px-4 py-2 bg-green-600/80 text-white rounded-lg font-medium text-base transition-all duration-200 hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500/50 ${
+            points.length === 0 ? "opacity-50 cursor-not-allowed" : ""
+          }`}
+        >
+          Export GPX
+        </button>
       </div>
       <div className="h-[600px] rounded-lg overflow-hidden border border-gray-700/50">
         <div ref={mapRef} className="w-full h-full" />
