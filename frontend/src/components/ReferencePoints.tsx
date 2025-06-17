@@ -13,6 +13,7 @@ interface ReferencePointsProps {
 const POINT_COLORS = [
   { name: "Red", color: "#EF4444" },
   { name: "Blue", color: "#3B82F6" },
+  { name: "Green", color: "#22C55E" },
 ];
 
 export function ReferencePoints({
@@ -70,7 +71,7 @@ export function ReferencePoints({
     const actualX = Math.round(x * scaleX);
     const actualY = Math.round(y * scaleY);
 
-    if (referencePoints.length < 2) {
+    if (referencePoints.length < 3) {
       const newPointIndex = referencePoints.length;
       onReferencePointsChange([
         ...referencePoints,
@@ -105,7 +106,8 @@ export function ReferencePoints({
       </h2>
       <div className="text-sm text-gray-400 mb-4">
         Click on the image to set reference points, then click on the map to set
-        their corresponding locations. You need to set exactly 2 points.
+        their corresponding locations. You need to set exactly 3 points for
+        better accuracy.
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="relative h-[600px] rounded-lg overflow-hidden border border-gray-700/50">

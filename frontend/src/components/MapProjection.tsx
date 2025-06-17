@@ -91,30 +91,47 @@ export function MapProjection({
     img.onload = () => {
       // Get all reference points that have both image and map coordinates
       const validPoints = referencePoints.filter((p) => p.mapPoint);
-      if (validPoints.length !== 2) return;
+      if (validPoints.length !== 3) return;
 
-      const p1 = validPoints[0];
-      const p2 = validPoints[1];
+      // Calculate scale factors between each pair of points
+      const scaleFactors = [];
+      for (let i = 0; i < validPoints.length; i++) {
+        for (let j = i + 1; j < validPoints.length; j++) {
+          const p1 = validPoints[i];
+          const p2 = validPoints[j];
 
-      // Calculate image distances
-      const imageDx = p2.imagePoint[0] - p1.imagePoint[0];
-      const imageDy = p2.imagePoint[1] - p1.imagePoint[1];
+          // Calculate image distances
+          const imageDx = p2.imagePoint[0] - p1.imagePoint[0];
+          const imageDy = p2.imagePoint[1] - p1.imagePoint[1];
 
-      // Calculate map distances
-      const mapDx = p2.mapPoint![1] - p1.mapPoint![1];
-      const mapDy = p2.mapPoint![0] - p1.mapPoint![0];
+          // Calculate map distances
+          const mapDx = p2.mapPoint![1] - p1.mapPoint![1];
+          const mapDy = p2.mapPoint![0] - p1.mapPoint![0];
 
-      // Calculate scale factors
-      const scaleFactorX = Math.abs(mapDx / imageDx);
-      const scaleFactorY = Math.abs(mapDy / imageDy);
+          // Calculate scale factors
+          const scaleX = Math.abs(mapDx / imageDx);
+          const scaleY = Math.abs(mapDy / imageDy);
+
+          scaleFactors.push({ scaleX, scaleY });
+        }
+      }
+
+      // Average the scale factors
+      const avgScaleX =
+        scaleFactors.reduce((sum, sf) => sum + sf.scaleX, 0) /
+        scaleFactors.length;
+      const avgScaleY =
+        scaleFactors.reduce((sum, sf) => sum + sf.scaleY, 0) /
+        scaleFactors.length;
 
       // Use the first reference point as anchor
-      const topLeftLat = p1.mapPoint![0] + p1.imagePoint[1] * scaleFactorY;
-      const topLeftLng = p1.mapPoint![1] - p1.imagePoint[0] * scaleFactorX;
+      const p1 = validPoints[0];
+      const topLeftLat = p1.mapPoint![0] + p1.imagePoint[1] * avgScaleY;
+      const topLeftLng = p1.mapPoint![1] - p1.imagePoint[0] * avgScaleX;
 
       // Calculate the bottom-right corner position
-      const bottomRightLat = topLeftLat - img.height * scaleFactorY;
-      const bottomRightLng = topLeftLng + img.width * scaleFactorX;
+      const bottomRightLat = topLeftLat - img.height * avgScaleY;
+      const bottomRightLng = topLeftLng + img.width * avgScaleX;
 
       // Create image overlay if showOverlay is true
       const imageUrl = URL.createObjectURL(image);
@@ -170,34 +187,51 @@ export function MapProjection({
 
     // Get all reference points that have both image and map coordinates
     const validPoints = referencePoints.filter((p) => p.mapPoint);
-    if (validPoints.length !== 2) return;
+    if (validPoints.length !== 3) return;
 
-    const p1 = validPoints[0];
-    const p2 = validPoints[1];
+    // Calculate scale factors between each pair of points
+    const scaleFactors = [];
+    for (let i = 0; i < validPoints.length; i++) {
+      for (let j = i + 1; j < validPoints.length; j++) {
+        const p1 = validPoints[i];
+        const p2 = validPoints[j];
 
-    // Calculate image distances
-    const imageDx = p2.imagePoint[0] - p1.imagePoint[0];
-    const imageDy = p2.imagePoint[1] - p1.imagePoint[1];
+        // Calculate image distances
+        const imageDx = p2.imagePoint[0] - p1.imagePoint[0];
+        const imageDy = p2.imagePoint[1] - p1.imagePoint[1];
 
-    // Calculate map distances
-    const mapDx = p2.mapPoint![1] - p1.mapPoint![1];
-    const mapDy = p2.mapPoint![0] - p1.mapPoint![0];
+        // Calculate map distances
+        const mapDx = p2.mapPoint![1] - p1.mapPoint![1];
+        const mapDy = p2.mapPoint![0] - p1.mapPoint![0];
 
-    // Calculate scale factors
-    const scaleFactorX = Math.abs(mapDx / imageDx);
-    const scaleFactorY = Math.abs(mapDy / imageDy);
+        // Calculate scale factors
+        const scaleX = Math.abs(mapDx / imageDx);
+        const scaleY = Math.abs(mapDy / imageDy);
+
+        scaleFactors.push({ scaleX, scaleY });
+      }
+    }
+
+    // Average the scale factors
+    const avgScaleX =
+      scaleFactors.reduce((sum, sf) => sum + sf.scaleX, 0) /
+      scaleFactors.length;
+    const avgScaleY =
+      scaleFactors.reduce((sum, sf) => sum + sf.scaleY, 0) /
+      scaleFactors.length;
 
     // Use the first reference point as anchor
-    const topLeftLat = p1.mapPoint![0] + p1.imagePoint[1] * scaleFactorY;
-    const topLeftLng = p1.mapPoint![1] - p1.imagePoint[0] * scaleFactorX;
+    const p1 = validPoints[0];
+    const topLeftLat = p1.mapPoint![0] + p1.imagePoint[1] * avgScaleY;
+    const topLeftLng = p1.mapPoint![1] - p1.imagePoint[0] * avgScaleX;
 
     // Transform points from image coordinates to map coordinates
     const mapPoints = points.map(([x, y]) => {
       // Apply offsets to the points
       const adjustedX = x + xOffset;
       const adjustedY = y + yOffset;
-      const lat = topLeftLat - adjustedY * scaleFactorY;
-      const lng = topLeftLng + adjustedX * scaleFactorX;
+      const lat = topLeftLat - adjustedY * avgScaleY;
+      const lng = topLeftLng + adjustedX * avgScaleX;
       return [lat, lng] as [number, number];
     });
 
@@ -259,33 +293,50 @@ export function MapProjection({
 
     // Get all reference points that have both image and map coordinates
     const validPoints = referencePoints.filter((p) => p.mapPoint);
-    if (validPoints.length !== 2) return;
+    if (validPoints.length !== 3) return;
 
-    const p1 = validPoints[0];
-    const p2 = validPoints[1];
+    // Calculate scale factors between each pair of points
+    const scaleFactors = [];
+    for (let i = 0; i < validPoints.length; i++) {
+      for (let j = i + 1; j < validPoints.length; j++) {
+        const p1 = validPoints[i];
+        const p2 = validPoints[j];
 
-    // Calculate image distances
-    const imageDx = p2.imagePoint[0] - p1.imagePoint[0];
-    const imageDy = p2.imagePoint[1] - p1.imagePoint[1];
+        // Calculate image distances
+        const imageDx = p2.imagePoint[0] - p1.imagePoint[0];
+        const imageDy = p2.imagePoint[1] - p1.imagePoint[1];
 
-    // Calculate map distances
-    const mapDx = p2.mapPoint![1] - p1.mapPoint![1];
-    const mapDy = p2.mapPoint![0] - p1.mapPoint![0];
+        // Calculate map distances
+        const mapDx = p2.mapPoint![1] - p1.mapPoint![1];
+        const mapDy = p2.mapPoint![0] - p1.mapPoint![0];
 
-    // Calculate scale factors
-    const scaleFactorX = Math.abs(mapDx / imageDx);
-    const scaleFactorY = Math.abs(mapDy / imageDy);
+        // Calculate scale factors
+        const scaleX = Math.abs(mapDx / imageDx);
+        const scaleY = Math.abs(mapDy / imageDy);
+
+        scaleFactors.push({ scaleX, scaleY });
+      }
+    }
+
+    // Average the scale factors
+    const avgScaleX =
+      scaleFactors.reduce((sum, sf) => sum + sf.scaleX, 0) /
+      scaleFactors.length;
+    const avgScaleY =
+      scaleFactors.reduce((sum, sf) => sum + sf.scaleY, 0) /
+      scaleFactors.length;
 
     // Use the first reference point as anchor
-    const topLeftLat = p1.mapPoint![0] + p1.imagePoint[1] * scaleFactorY;
-    const topLeftLng = p1.mapPoint![1] - p1.imagePoint[0] * scaleFactorX;
+    const p1 = validPoints[0];
+    const topLeftLat = p1.mapPoint![0] + p1.imagePoint[1] * avgScaleY;
+    const topLeftLng = p1.mapPoint![1] - p1.imagePoint[0] * avgScaleX;
 
     // Transform points from image coordinates to map coordinates
     const mapPoints = points.map(([x, y]) => {
       const adjustedX = x + xOffset;
       const adjustedY = y + yOffset;
-      const lat = topLeftLat - adjustedY * scaleFactorY;
-      const lng = topLeftLng + adjustedX * scaleFactorX;
+      const lat = topLeftLat - adjustedY * avgScaleY;
+      const lng = topLeftLng + adjustedX * avgScaleX;
       return [lat, lng] as [number, number];
     });
 

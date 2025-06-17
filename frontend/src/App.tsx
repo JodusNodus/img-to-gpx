@@ -24,6 +24,12 @@ function App() {
       name: "Point 2",
       color: "#3B82F6",
     },
+    {
+      imagePoint: [431, 214],
+      mapPoint: [51.37742225411848, 5.98429497446329],
+      name: "Point 3",
+      color: "#22C55E",
+    },
   ]);
 
   // Handle image selection
@@ -100,7 +106,7 @@ function App() {
   // Handle transition to map view
   const handleProjectImage = () => {
     if (
-      referencePoints.length === 2 &&
+      referencePoints.length === 3 &&
       referencePoints.every((p) => p.mapPoint !== null)
     ) {
       setCurrentStep(4);
@@ -179,11 +185,11 @@ function App() {
                 <button
                   onClick={handleProjectImage}
                   disabled={
-                    referencePoints.length !== 2 ||
+                    referencePoints.length !== 3 ||
                     referencePoints.some((p) => p.mapPoint === null)
                   }
                   className={`px-6 py-2 bg-indigo-600/80 text-white rounded-lg font-medium text-base transition-all duration-200 hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:ring-offset-2 focus:ring-offset-gray-900 ${
-                    referencePoints.length !== 2 ||
+                    referencePoints.length !== 3 ||
                     referencePoints.some((p) => p.mapPoint === null)
                       ? "opacity-50 cursor-not-allowed"
                       : ""
