@@ -31,6 +31,7 @@ export function ImagePreview({
 
   useEffect(() => {
     if (points && canvasRef.current && imageRef.current) {
+      console.log("Drawing points:", points);
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
       const img = imageRef.current;
@@ -43,30 +44,39 @@ export function ImagePreview({
       // Calculate scale factors
       const scaleX = rect.width / img.naturalWidth;
       const scaleY = rect.height / img.naturalHeight;
+      console.log("Scale factors:", { scaleX, scaleY });
       // Draw points
       ctx.beginPath();
       ctx.strokeStyle = "rgba(255, 0, 0, 0.8)";
       ctx.lineWidth = 3;
       if (points.points.length > 0) {
         const [startX, startY] = points.points[0];
+        console.log("Starting point:", { startX, startY });
         ctx.moveTo(startX * scaleX, startY * scaleY);
         for (let i = 1; i < points.points.length; i++) {
           const [x, y] = points.points[i];
           ctx.lineTo(x * scaleX, y * scaleY);
         }
+        ctx.stroke();
+        console.log("Line drawn");
       }
-      ctx.stroke();
     }
   }, [points]);
 
   return (
     <div className="space-y-4">
       <h2 className="text-2xl font-semibold text-gray-200">
-        Step 5: Select Line
+        Step 2: Select Line
       </h2>
       <div className="text-sm text-gray-400 mb-4">
-        Click on the image to generate a line. Click multiple times to try
-        different starting points.
+        Click on the image to generate a line. The line will be shown in red.
+        Click again to try a different starting point.
+        {points && points.points.length > 0 && (
+          <span className="block mt-2 text-indigo-400">
+            Line generated! Click "Next" to continue or click again to try a
+            different starting point.
+          </span>
+        )}
       </div>
       <div className="my-6 text-center">
         <div className="inline-block relative">

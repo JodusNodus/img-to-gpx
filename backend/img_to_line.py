@@ -1,14 +1,10 @@
 from typing import Tuple, List
 import cv2
 import numpy as np
-import svgwrite
 from pathlib import Path
 from skimage.morphology import skeletonize
 import logging
 import tempfile
-
-# Constants
-DEFAULT_SIMPLIFICATION_EPSILON = 0.003
 
 logger = logging.getLogger(__name__)
 
@@ -97,40 +93,3 @@ def detect_path(img: np.ndarray, hsv: np.ndarray,
         logger.info(f"Debug image saved: {debug_path}")
     
     return list(contours)
-
-def create_svg(contours: List[np.ndarray], output_path: str, 
-               width: int, height: int) -> None:
-    """Convert contours to SVG."""
-    if not contours:
-        raise ValueError("No contours provided")
-    
-    # Get the bounding box of all points
-    all_points = np.vstack([contour.reshape(-1, 2) for contour in contours])
-    min_x = np.min(all_points[:, 0])
-    min_y = np.min(all_points[:, 1])
-    max_x = np.max(all_points[:, 0])
-    max_y = np.max(all_points[:, 1])
-    
-    # Add some padding
-    padding = 10
-    svg_width = str(max_x - min_x + 2 * padding)
-    svg_height = str(max_y - min_y + 2 * padding)
-    
-    # Create SVG with actual dimensions
-    dwg = svgwrite.Drawing(output_path, size=(svg_width, svg_height))
-    
-    for contour in contours:
-        if len(contour) > 1:
-            # Create path with zeroed coordinates and padding
-            points = [f"{point[0][0]-min_x+padding},{point[0][1]-min_y+padding}" 
-                     for point in contour]
-            path_data = f"M {' L '.join(points)}"
-            
-            dwg.add(dwg.path(
-                d=path_data,
-                stroke='black',
-                stroke_width=2,
-                fill='none'
-            ))
-    
-    dwg.save() 

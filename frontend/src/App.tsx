@@ -10,21 +10,20 @@ function App() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
-  const [overlayOpacity, setOverlayOpacity] = useState(0.5);
-  const [overlayContrast, setOverlayContrast] = useState(1.7);
+  const [points, setPoints] = useState<[number, number][]>([]);
   const [referencePoints, setReferencePoints] = useState<ReferencePoint[]>([
-    // {
-    //   imagePoint: [157, 880],
-    //   mapPoint: [51.20782967751098, 3.226942466625933],
-    //   name: "Point 1",
-    //   color: "#EF4444",
-    // },
-    // {
-    //   imagePoint: [1322, 392],
-    //   mapPoint: [51.531857513789234, 4.462019513445795],
-    //   name: "Point 2",
-    //   color: "#3B82F6",
-    // },
+    {
+      imagePoint: [523, 259],
+      mapPoint: [51.358227550693904, 6.047986412007442],
+      name: "Point 1",
+      color: "#EF4444",
+    },
+    {
+      imagePoint: [143, 395],
+      mapPoint: [51.298082837311874, 5.783131713983317],
+      name: "Point 2",
+      color: "#3B82F6",
+    },
   ]);
 
   // Handle image selection
@@ -32,7 +31,7 @@ function App() {
     setFormData((prev) => ({ ...prev, image: file }));
     const url = URL.createObjectURL(file);
     setImagePreview(url);
-    setCurrentStep(3);
+    setCurrentStep(2); // Move to line selection step
   };
 
   // Reset to upload step
@@ -44,6 +43,8 @@ function App() {
     setImagePreview(null);
     setError(null);
     setCurrentStep(1);
+    setPoints([]);
+    setReferencePoints([]);
   };
 
   // Cleanup preview URL when component unmounts
@@ -54,6 +55,47 @@ function App() {
       }
     };
   }, [imagePreview]);
+
+  // Handle image click in ImagePreview
+  const handleImageClick = async (e: React.MouseEvent<HTMLImageElement>) => {
+    if (!formData.image) return;
+
+    const img = e.currentTarget;
+    const rect = img.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const scaleX = img.naturalWidth / rect.width;
+    const scaleY = img.naturalHeight / rect.height;
+    const actualX = Math.round(x * scaleX);
+    const actualY = Math.round(y * scaleY);
+
+    console.log("Click coordinates:", { x, y, actualX, actualY });
+
+    // Create form data
+    const formDataToSend = new FormData();
+    formDataToSend.append("image", formData.image);
+    formDataToSend.append("start_x", actualX.toString());
+    formDataToSend.append("start_y", actualY.toString());
+
+    try {
+      const response = await fetch("http://localhost:5131/api/points", {
+        method: "POST",
+        body: formDataToSend,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to generate points");
+      }
+
+      const data = await response.json();
+      console.log("Received points data:", data);
+      setPoints(data.points);
+    } catch (error) {
+      console.error("Error generating points:", error);
+      setError(error instanceof Error ? error.message : "An error occurred");
+    }
+  };
 
   // Handle transition to map view
   const handleProjectImage = () => {
@@ -75,6 +117,29 @@ function App() {
           {currentStep === 1 && (
             <ImageUpload onImageSelect={handleImageSelect} />
           )}
+          {currentStep === 2 && imagePreview && (
+            <ImagePreview
+              imageUrl={imagePreview}
+              points={
+                points.length > 0
+                  ? {
+                      points,
+                      normalized_points: points,
+                      width: 0,
+                      height: 0,
+                      bounds: {
+                        min_x: 0,
+                        min_y: 0,
+                        max_x: 0,
+                        max_y: 0,
+                      },
+                      image: formData.image!,
+                    }
+                  : null
+              }
+              onImageClick={handleImageClick}
+            />
+          )}
           {currentStep === 3 && imagePreview && (
             <ReferencePoints
               imageUrl={imagePreview}
@@ -86,14 +151,8 @@ function App() {
             <MapProjection
               image={formData.image}
               referencePoints={referencePoints}
-              overlayOpacity={overlayOpacity}
-              overlayContrast={overlayContrast}
-              onOpacityChange={setOverlayOpacity}
-              onContrastChange={setOverlayContrast}
+              points={points}
             />
-          )}
-          {currentStep === 5 && imagePreview && (
-            <ImagePreview imageUrl={imagePreview} />
           )}
           {error && (
             <p className="text-red-400 text-sm font-medium text-center mt-4">
@@ -108,6 +167,14 @@ function App() {
               >
                 Upload New Image
               </button>
+              {currentStep === 2 && points.length > 0 && (
+                <button
+                  onClick={() => setCurrentStep(3)}
+                  className="px-6 py-2 bg-indigo-600/80 text-white rounded-lg font-medium text-base transition-all duration-200 hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:ring-offset-2 focus:ring-offset-gray-900"
+                >
+                  Next
+                </button>
+              )}
               {currentStep === 3 && (
                 <button
                   onClick={handleProjectImage}
@@ -121,14 +188,6 @@ function App() {
                       ? "opacity-50 cursor-not-allowed"
                       : ""
                   }`}
-                >
-                  Next
-                </button>
-              )}
-              {currentStep === 4 && (
-                <button
-                  onClick={() => setCurrentStep(5)}
-                  className="px-6 py-2 bg-indigo-600/80 text-white rounded-lg font-medium text-base transition-all duration-200 hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:ring-offset-2 focus:ring-offset-gray-900"
                 >
                   Next
                 </button>

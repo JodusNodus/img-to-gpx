@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { ReferencePoint } from "../types";
@@ -6,23 +6,19 @@ import type { ReferencePoint } from "../types";
 interface MapProjectionProps {
   image: File;
   referencePoints: ReferencePoint[];
-  overlayOpacity: number;
-  overlayContrast: number;
-  onOpacityChange: (value: number) => void;
-  onContrastChange: (value: number) => void;
+  points?: [number, number][];
 }
 
 export function MapProjection({
   image,
   referencePoints,
-  overlayOpacity,
-  overlayContrast,
-  onOpacityChange,
-  onContrastChange,
+  points = [],
 }: MapProjectionProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const imageOverlayRef = useRef<L.ImageOverlay | null>(null);
+  const polylineRef = useRef<L.Polyline | null>(null);
+  const [showOverlay, setShowOverlay] = useState(false);
 
   // Initialize map
   useEffect(() => {
@@ -43,13 +39,18 @@ export function MapProjection({
     };
   }, []);
 
-  // Update overlay when points or opacity/contrast change
+  // Update overlay and points when points change
   useEffect(() => {
     if (!mapInstanceRef.current || !image || !referencePoints) return;
 
-    // Remove existing overlay
+    // Remove existing overlay and polyline
     if (imageOverlayRef.current) {
       imageOverlayRef.current.remove();
+      imageOverlayRef.current = null;
+    }
+    if (polylineRef.current) {
+      polylineRef.current.remove();
+      polylineRef.current = null;
     }
 
     // Get the image dimensions
@@ -84,26 +85,34 @@ export function MapProjection({
       const bottomRightLat = topLeftLat - img.height * scaleFactorY;
       const bottomRightLng = topLeftLng + img.width * scaleFactorX;
 
-      // Create image overlay
+      // Create image overlay if showOverlay is true
       const imageUrl = URL.createObjectURL(image);
-      const overlay = L.imageOverlay(
-        imageUrl,
-        [
+      if (showOverlay) {
+        const overlay = L.imageOverlay(imageUrl, [
           [topLeftLat, topLeftLng],
           [bottomRightLat, bottomRightLng],
-        ],
-        {
-          opacity: overlayOpacity,
-        }
-      ).addTo(mapInstanceRef.current!);
+        ]).addTo(mapInstanceRef.current!);
 
-      // Apply contrast using CSS filter
-      const imgElement = overlay.getElement();
-      if (imgElement) {
-        imgElement.style.filter = `contrast(${overlayContrast})`;
+        imageOverlayRef.current = overlay;
       }
 
-      imageOverlayRef.current = overlay;
+      // Transform points from image coordinates to map coordinates
+      if (points.length > 0) {
+        const mapPoints = points.map(([x, y]) => {
+          const lat = topLeftLat - y * scaleFactorY;
+          const lng = topLeftLng + x * scaleFactorX;
+          return [lat, lng] as [number, number];
+        });
+
+        // Create polyline
+        const polyline = L.polyline(mapPoints, {
+          color: "red",
+          weight: 3,
+          opacity: 0.8,
+        }).addTo(mapInstanceRef.current!);
+
+        polylineRef.current = polyline;
+      }
 
       // Fit map to bounds
       mapInstanceRef.current!.fitBounds([
@@ -117,10 +126,14 @@ export function MapProjection({
           imageOverlayRef.current.remove();
           imageOverlayRef.current = null;
         }
+        if (polylineRef.current) {
+          polylineRef.current.remove();
+          polylineRef.current = null;
+        }
         URL.revokeObjectURL(imageUrl);
       };
     };
-  }, [image, referencePoints, overlayOpacity, overlayContrast]);
+  }, [image, referencePoints, points, showOverlay]);
 
   return (
     <div className="space-y-4">
@@ -128,44 +141,19 @@ export function MapProjection({
         Step 4: Map Projection
       </h2>
       <div className="text-sm text-gray-400 mb-4">
-        The image has been projected onto the map based on your reference
-        points. You can adjust the opacity and contrast of the overlay using the
-        sliders below.
+        The line has been projected onto the map based on your reference points.
+        You can toggle the image overlay to help with alignment.
+      </div>
+      <div className="flex justify-end mb-4">
+        <button
+          onClick={() => setShowOverlay(!showOverlay)}
+          className="px-4 py-2 bg-indigo-600/80 text-white rounded-lg font-medium text-base transition-all duration-200 hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+        >
+          {showOverlay ? "Hide Image" : "Show Image"}
+        </button>
       </div>
       <div className="h-[600px] rounded-lg overflow-hidden border border-gray-700/50">
         <div ref={mapRef} className="w-full h-full" />
-      </div>
-      <div className="flex flex-col md:flex-row gap-6 mt-6 items-center justify-between">
-        <div className="flex flex-col gap-2 w-full md:w-1/2">
-          <label htmlFor="opacity-slider" className="text-sm text-gray-300">
-            Overlay Opacity: {overlayOpacity.toFixed(2)}
-          </label>
-          <input
-            id="opacity-slider"
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={overlayOpacity}
-            onChange={(e) => onOpacityChange(Number(e.target.value))}
-            className="w-full accent-indigo-500"
-          />
-        </div>
-        <div className="flex flex-col gap-2 w-full md:w-1/2">
-          <label htmlFor="contrast-slider" className="text-sm text-gray-300">
-            Overlay Contrast: {overlayContrast.toFixed(2)}
-          </label>
-          <input
-            id="contrast-slider"
-            type="range"
-            min={0.5}
-            max={3}
-            step={0.01}
-            value={overlayContrast}
-            onChange={(e) => onContrastChange(Number(e.target.value))}
-            className="w-full accent-indigo-500"
-          />
-        </div>
       </div>
     </div>
   );

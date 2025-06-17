@@ -18,6 +18,7 @@ export function Map({
 }: MapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
+  const markersRef = useRef<L.Marker[]>([]);
   const [search, setSearch] = useState("");
 
   // Initialize map
@@ -48,15 +49,14 @@ export function Map({
   useEffect(() => {
     if (!mapInstanceRef.current) return;
 
-    // Clear existing markers
-    mapInstanceRef.current.eachLayer((layer) => {
-      if (layer instanceof L.Marker) {
-        mapInstanceRef.current?.removeLayer(layer);
-      }
+    // Remove existing markers
+    markersRef.current.forEach((marker) => {
+      marker.remove();
     });
+    markersRef.current = [];
 
     // Add new markers for each point that has a location
-    referencePoints.forEach((point, index) => {
+    referencePoints.forEach((point) => {
       if (point.mapPoint) {
         const [lat, lng] = point.mapPoint;
         const marker = L.marker([lat, lng], {
@@ -72,6 +72,8 @@ export function Map({
         marker.on("click", () => {
           onMapClick(lat, lng);
         });
+
+        markersRef.current.push(marker);
       }
     });
   }, [referencePoints, onMapClick]);
