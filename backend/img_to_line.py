@@ -125,6 +125,17 @@ def detect_path(img: np.ndarray, hsv: np.ndarray,
     if filtered_path:
         contour = np.array(filtered_path, dtype=np.int32).reshape(-1, 1, 2)
         contours = [contour]
+        
+        # Simplify the contours
+        simplified_contours = []
+        for c in contours:
+            # Calculate perimeter for epsilon scaling
+            perimeter = cv2.arcLength(c, True)
+            # Use 1% of perimeter for very gentle simplification
+            epsilon = 0.0004 * perimeter
+            simplified = cv2.approxPolyDP(c, epsilon, True)
+            simplified_contours.append(simplified)
+        contours = simplified_contours
     else:
         contours = []
     

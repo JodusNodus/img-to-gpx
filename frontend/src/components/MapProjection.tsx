@@ -3,11 +3,70 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { ReferencePoint } from "../types";
 
+// Helper: Compute affine transform parameters from 3 point pairs (direct solution)
+function computeAffineTransform(imgPts: number[][], mapPts: number[][]) {
+  // imgPts: [[x1, y1], [x2, y2], [x3, y3]]
+  // mapPts: [[X1, Y1], [X2, Y2], [X3, Y3]]
+  const [[x1, y1], [x2, y2], [x3, y3]] = imgPts;
+  const [[X1, Y1], [X2, Y2], [X3, Y3]] = mapPts;
+  // Solve for affine parameters: X = a*x + b*y + c, Y = d*x + e*y + f
+  // Set up the system: [ [x1 y1 1 0 0 0], [0 0 0 x1 y1 1], ... ]
+  const A = [
+    [x1, y1, 1, 0, 0, 0],
+    [0, 0, 0, x1, y1, 1],
+    [x2, y2, 1, 0, 0, 0],
+    [0, 0, 0, x2, y2, 1],
+    [x3, y3, 1, 0, 0, 0],
+    [0, 0, 0, x3, y3, 1],
+  ];
+  const B = [X1, Y1, X2, Y2, X3, Y3];
+  // Solve Ax = B
+  // Use Cramer's rule for 3 points (6x6)
+  // We'll use numeric.js if available, otherwise a simple pseudo-inverse
+  // For 3 points, we can use a direct solution
+  function solve(A: number[][], B: number[]) {
+    // Use Gaussian elimination (for small 6x6 system)
+    const m = A.map((row) => row.slice());
+    const b = B.slice();
+    for (let i = 0; i < 6; i++) {
+      // Find pivot
+      let maxRow = i;
+      for (let k = i + 1; k < 6; k++) {
+        if (Math.abs(m[k][i]) > Math.abs(m[maxRow][i])) maxRow = k;
+      }
+      // Swap rows
+      [m[i], m[maxRow]] = [m[maxRow], m[i]];
+      [b[i], b[maxRow]] = [b[maxRow], b[i]];
+      // Eliminate
+      for (let k = i + 1; k < 6; k++) {
+        const c = m[k][i] / m[i][i];
+        for (let j = i; j < 6; j++) m[k][j] -= c * m[i][j];
+        b[k] -= c * b[i];
+      }
+    }
+    // Back substitution
+    const x = Array(6).fill(0);
+    for (let i = 5; i >= 0; i--) {
+      let sum = b[i];
+      for (let j = i + 1; j < 6; j++) sum -= m[i][j] * x[j];
+      x[i] = sum / m[i][i];
+    }
+    return x;
+  }
+  return solve(A, B);
+}
+
+function applyAffineTransform(x: number, y: number, params: number[]) {
+  const [a, b, c, d, e, f] = params;
+  const X = a * x + b * y + c;
+  const Y = d * x + e * y + f;
+  return [X, Y];
+}
+
 interface MapProjectionProps {
   image: File;
   referencePoints: ReferencePoint[];
   points: [number, number][];
-  onPointsChange?: (points: [number, number][]) => void;
 }
 
 function createGPXContent(points: [number, number][]): string {
@@ -41,7 +100,6 @@ export function MapProjection({
   image,
   referencePoints,
   points = [],
-  onPointsChange,
 }: MapProjectionProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -84,6 +142,10 @@ export function MapProjection({
       polylineRef.current.remove();
       polylineRef.current = null;
     }
+    if (snappedPolylineRef.current) {
+      snappedPolylineRef.current.remove();
+      snappedPolylineRef.current = null;
+    }
 
     // Get the image dimensions
     const img = new Image();
@@ -92,64 +154,60 @@ export function MapProjection({
     img.onload = () => {
       // Get all reference points that have both image and map coordinates
       const validPoints = referencePoints.filter((p) => p.mapPoint);
-      if (validPoints.length !== 3) return;
+      if (validPoints.length < 2) return;
 
-      // Calculate scale factors between each pair of points
-      const scaleFactors = [];
-      for (let i = 0; i < validPoints.length; i++) {
-        for (let j = i + 1; j < validPoints.length; j++) {
-          const p1 = validPoints[i];
-          const p2 = validPoints[j];
+      // Prepare arrays for axis-aligned calculation
+      const imgPts = validPoints.map((p) => p.imagePoint);
+      const mapPts = validPoints.map((p) => [p.mapPoint![1], p.mapPoint![0]]); // [lng, lat]
 
-          // Calculate image distances
-          const imageDx = p2.imagePoint[0] - p1.imagePoint[0];
-          const imageDy = p2.imagePoint[1] - p1.imagePoint[1];
-
-          // Calculate map distances
-          const mapDx = p2.mapPoint![1] - p1.mapPoint![1];
-          const mapDy = p2.mapPoint![0] - p1.mapPoint![0];
-
-          // Calculate scale factors
-          const scaleX = Math.abs(mapDx / imageDx);
-          const scaleY = Math.abs(mapDy / imageDy);
-
-          scaleFactors.push({ scaleX, scaleY });
-        }
+      // 1. Affine transform (if 3+ points)
+      let affineMapPoints: [number, number][] = [];
+      let affineParams: number[] = [];
+      if (validPoints.length >= 3) {
+        affineParams = computeAffineTransform(
+          imgPts.slice(0, 3),
+          mapPts.slice(0, 3)
+        );
+        affineMapPoints = points.map(([x, y]) => {
+          const [lng, lat] = applyAffineTransform(x, y, affineParams);
+          return [lat, lng] as [number, number];
+        });
       }
 
-      // Average the scale factors
-      const avgScaleX =
-        scaleFactors.reduce((sum, sf) => sum + sf.scaleX, 0) /
-        scaleFactors.length;
-      const avgScaleY =
-        scaleFactors.reduce((sum, sf) => sum + sf.scaleY, 0) /
-        scaleFactors.length;
-
-      // Use the first reference point as anchor
-      const p1 = validPoints[0];
-      const topLeftLat = p1.mapPoint![0] + p1.imagePoint[1] * avgScaleY;
-      const topLeftLng = p1.mapPoint![1] - p1.imagePoint[0] * avgScaleX;
-
-      // Calculate the bottom-right corner position
-      const bottomRightLat = topLeftLat - img.height * avgScaleY;
-      const bottomRightLng = topLeftLng + img.width * avgScaleX;
+      // Calculate the projected image corners using affine transform
+      const topLeft = applyAffineTransform(0, 0, affineParams);
+      const bottomRight = applyAffineTransform(
+        img.width,
+        img.height,
+        affineParams
+      );
 
       // Create image overlay if showOverlay is true
       const imageUrl = URL.createObjectURL(image);
       if (showOverlay) {
         const overlay = L.imageOverlay(imageUrl, [
-          [topLeftLat, topLeftLng],
-          [bottomRightLat, bottomRightLng],
+          [topLeft[1], topLeft[0]],
+          [bottomRight[1], bottomRight[0]],
         ]).addTo(mapInstanceRef.current!);
-
         imageOverlayRef.current = overlay;
       }
 
       // Fit map to bounds
       mapInstanceRef.current!.fitBounds([
-        [topLeftLat, topLeftLng],
-        [bottomRightLat, bottomRightLng],
+        [topLeft[1], topLeft[0]],
+        [bottomRight[1], bottomRight[0]],
       ]);
+
+      // Draw affine (red, dashed)
+      if (affineMapPoints.length > 0) {
+        const polyline = L.polyline(affineMapPoints, {
+          color: "red",
+          weight: 2,
+          opacity: 0.8,
+          dashArray: "6, 6",
+        }).addTo(mapInstanceRef.current!);
+        polylineRef.current = polyline;
+      }
 
       // Cleanup
       return () => {
@@ -188,55 +246,29 @@ export function MapProjection({
 
     // Get all reference points that have both image and map coordinates
     const validPoints = referencePoints.filter((p) => p.mapPoint);
-    if (validPoints.length !== 3) return;
+    if (validPoints.length < 2) return;
 
-    // Calculate scale factors between each pair of points
-    const scaleFactors = [];
-    for (let i = 0; i < validPoints.length; i++) {
-      for (let j = i + 1; j < validPoints.length; j++) {
-        const p1 = validPoints[i];
-        const p2 = validPoints[j];
+    // Prepare arrays for axis-aligned calculation
+    const imgPts = validPoints.map((p) => p.imagePoint);
+    const mapPts = validPoints.map((p) => [p.mapPoint![1], p.mapPoint![0]]); // [lng, lat]
 
-        // Calculate image distances
-        const imageDx = p2.imagePoint[0] - p1.imagePoint[0];
-        const imageDy = p2.imagePoint[1] - p1.imagePoint[1];
-
-        // Calculate map distances
-        const mapDx = p2.mapPoint![1] - p1.mapPoint![1];
-        const mapDy = p2.mapPoint![0] - p1.mapPoint![0];
-
-        // Calculate scale factors
-        const scaleX = Math.abs(mapDx / imageDx);
-        const scaleY = Math.abs(mapDy / imageDy);
-
-        scaleFactors.push({ scaleX, scaleY });
-      }
+    // 1. Affine transform (if 3+ points)
+    let affineMapPoints: [number, number][] = [];
+    if (validPoints.length >= 3) {
+      const affineParams = computeAffineTransform(
+        imgPts.slice(0, 3),
+        mapPts.slice(0, 3)
+      );
+      affineMapPoints = points.map(([x, y]) => {
+        const [lng, lat] = applyAffineTransform(x, y, affineParams);
+        return [lat, lng] as [number, number];
+      });
     }
 
-    // Average the scale factors
-    const avgScaleX =
-      scaleFactors.reduce((sum, sf) => sum + sf.scaleX, 0) /
-      scaleFactors.length;
-    const avgScaleY =
-      scaleFactors.reduce((sum, sf) => sum + sf.scaleY, 0) /
-      scaleFactors.length;
-
-    // Use the first reference point as anchor
-    const p1 = validPoints[0];
-    const topLeftLat = p1.mapPoint![0] + p1.imagePoint[1] * avgScaleY;
-    const topLeftLng = p1.mapPoint![1] - p1.imagePoint[0] * avgScaleX;
-
-    // Transform points from image coordinates to map coordinates
-    const mapPoints = points.map(([x, y]) => {
-      const lat = topLeftLat - y * avgScaleY;
-      const lng = topLeftLng + x * avgScaleX;
-      return [lat, lng] as [number, number];
-    });
-
     // Create polyline
-    const polyline = L.polyline(mapPoints, {
+    const polyline = L.polyline(affineMapPoints, {
       color: "red",
-      weight: 3,
+      weight: 2,
       opacity: 0.8,
     }).addTo(mapInstanceRef.current!);
 
@@ -255,11 +287,11 @@ export function MapProjection({
       iconAnchor: [6, 6],
     });
 
-    const startMarker = L.marker(mapPoints[0], { icon: startIcon })
+    const startMarker = L.marker(affineMapPoints[0], { icon: startIcon })
       .addTo(mapInstanceRef.current!)
       .bindTooltip("Start", { permanent: true, direction: "top" });
 
-    const endMarker = L.marker(mapPoints[mapPoints.length - 1], {
+    const endMarker = L.marker(affineMapPoints[affineMapPoints.length - 1], {
       icon: endIcon,
     })
       .addTo(mapInstanceRef.current!)
@@ -291,53 +323,21 @@ export function MapProjection({
 
     // Get all reference points that have both image and map coordinates
     const validPoints = referencePoints.filter((p) => p.mapPoint);
-    if (validPoints.length !== 3) return;
+    if (validPoints.length < 3) return;
 
-    // Calculate scale factors between each pair of points
-    const scaleFactors = [];
-    for (let i = 0; i < validPoints.length; i++) {
-      for (let j = i + 1; j < validPoints.length; j++) {
-        const p1 = validPoints[i];
-        const p2 = validPoints[j];
-
-        // Calculate image distances
-        const imageDx = p2.imagePoint[0] - p1.imagePoint[0];
-        const imageDy = p2.imagePoint[1] - p1.imagePoint[1];
-
-        // Calculate map distances
-        const mapDx = p2.mapPoint![1] - p1.mapPoint![1];
-        const mapDy = p2.mapPoint![0] - p1.mapPoint![0];
-
-        // Calculate scale factors
-        const scaleX = Math.abs(mapDx / imageDx);
-        const scaleY = Math.abs(mapDy / imageDy);
-
-        scaleFactors.push({ scaleX, scaleY });
-      }
-    }
-
-    // Average the scale factors
-    const avgScaleX =
-      scaleFactors.reduce((sum, sf) => sum + sf.scaleX, 0) /
-      scaleFactors.length;
-    const avgScaleY =
-      scaleFactors.reduce((sum, sf) => sum + sf.scaleY, 0) /
-      scaleFactors.length;
-
-    // Use the first reference point as anchor
-    const p1 = validPoints[0];
-    const topLeftLat = p1.mapPoint![0] + p1.imagePoint[1] * avgScaleY;
-    const topLeftLng = p1.mapPoint![1] - p1.imagePoint[0] * avgScaleX;
-
-    // Transform points from image coordinates to map coordinates
-    const mapPoints = points.map(([x, y]) => {
-      const lat = topLeftLat - y * avgScaleY;
-      const lng = topLeftLng + x * avgScaleX;
+    const imgPts = validPoints.map((p) => p.imagePoint);
+    const mapPts = validPoints.map((p) => [p.mapPoint![1], p.mapPoint![0]]); // [lng, lat]
+    const affineParams = computeAffineTransform(
+      imgPts.slice(0, 3),
+      mapPts.slice(0, 3)
+    );
+    const affineMapPoints = points.map(([x, y]) => {
+      const [lng, lat] = applyAffineTransform(x, y, affineParams);
       return [lat, lng] as [number, number];
     });
 
     // Create GPX content
-    const gpxContent = createGPXContent(mapPoints);
+    const gpxContent = createGPXContent(affineMapPoints);
 
     // Create and download file
     const blob = new Blob([gpxContent], { type: "application/gpx+xml" });
